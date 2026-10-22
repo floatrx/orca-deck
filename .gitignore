@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# ESP32 firmware (knob/, later)
+.pio/
+
+# Local secrets, if one ever lands in the repo by mistake
+# (the bridge keeps its token and ntfy topic in ~/.config/orca-deck/bridge.json)
+*.local.json
+.env
