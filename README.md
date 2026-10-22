@@ -11,7 +11,7 @@ row, a tap focuses that worktree in Orca, and the Taptic Engine is the beacon �
 ```
 orca-deck/
 ├── protocol.md   the contract between the bridge and every client — read this first
-├── bridge/       Hammerspoon Lua bridge on the Mac (HTTP + WebSocket, port 7352) and the browser mock
+├── bridge/       Hammerspoon Lua bridge on the Mac (local 7352: WebSocket + mock; remote API 7353) and the browser mock
 ├── watch/        SwiftUI watchOS app
 ├── probe/        throwaway transport probe for the real watch
 └── knob/         later — ESP32 firmware
@@ -57,12 +57,28 @@ open http://localhost:7352/
 On its first load the bridge writes `~/.config/orca-deck/bridge.json` (mode 600) with a random bearer
 token and a random ntfy topic. See `protocol.md` § Config.
 
+Port 7352 (mock, WebSocket, API) always stays on localhost. Port 7353 serves the token-protected API
+only; it is the only port the watch, the LAN or a tunnel may reach. Never point a tunnel at 7352 — its
+WebSocket has no auth and presses keys.
+
 ```bash
 TOKEN=$(jq -r .token ~/.config/orca-deck/bridge.json)
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:7352/api/state | jq
 ```
 
-Trail of commands and Orca's active-worktree changes: `/tmp/orca-deck-bridge.log`.
+A synthetic event checks ntfy and the clients' haptics without waiting for an agent:
+
+```bash
+hs -c 'return deckBridge.testEvent("attention")' </dev/null   # or "done"
+```
+
+Trail of commands, events (with Orca's raw state) and active-worktree changes: `/tmp/orca-deck-bridge.log`.
+
+Tests for the pure logic (`bridge/core.lua`), run inside Hammerspoon's Lua 5.4 without starting a server:
+
+```bash
+bridge/test/run.sh
+```
 
 ### The spike bridge and this bridge — never both at once
 

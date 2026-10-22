@@ -1,0 +1,422 @@
+<!doctype html>
+<!-- orca-deck: a 360×360 knob mock that stands in for the ESP32 board. Speaks protocol v1 (../protocol.md).
+     Snapshot of the spike's index.html, copied 2026-10-22 22:31; buckets and pulses now come from the bridge. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>orca-deck · knob mock</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0d0e10;
+    --screen: #050506;
+    --ink: #f1efe9;
+    --muted: #8a8780;
+    --working: #4cc3ff;
+    --attention: #ff7a1a;
+    --done: #3ddc84;
+    --idle: #5d5b57;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 14px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    /* A device screen does not scroll: no page scroll and no WebKit rubber-band bounce. */
+    overflow: hidden; overscroll-behavior: none; }
+  body { display: grid; place-items: center; padding: 12px 12px 64px; }
+
+  .stage { display: flex; align-items: center; gap: 28px; }
+
+  /* The metal ring is the knob: it turns with the wheel, the screen inside stays put. */
+  .knob { position: relative; width: 432px; height: 432px; border-radius: 50%; user-select: none; cursor: grab; }
+  .ring { position: absolute; inset: 0; border-radius: 50%;
+    background: repeating-conic-gradient(from 0deg, #2a2b2e 0deg 2deg, #3a3b3f 2deg 4deg);
+    box-shadow: inset 0 2px 3px rgba(255,255,255,.18), inset 0 -3px 6px rgba(0,0,0,.6), 0 18px 40px rgba(0,0,0,.55);
+    transition: transform .16s cubic-bezier(.2,.8,.2,1); }
+  /* The notch makes the turn visible: the knurl alone repeats every 4° and hides any rotation. */
+  .ring::after { content: ""; position: absolute; left: 50%; top: 6px; width: 6px; height: 22px; margin-left: -3px;
+    border-radius: 3px; background: #ece9e2; box-shadow: 0 0 8px rgba(255,255,255,.35); }
+  .ring.following { transition: none; }
+  .screen { position: absolute; inset: 36px; border-radius: 50%; background: var(--screen); overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), inset 0 0 30px rgba(0,0,0,.9); }
+  .knob.buzz { animation: buzz .09s linear 0s 4; }
+  .knob.buzz2 { animation: buzz .09s linear 0s 4, buzz .09s linear .5s 4; }
+  @keyframes buzz { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-2px,1px); } 75% { transform: translate(2px,-1px); } }
+
+  /* Agents sit on a circle inside the screen; the selected one is always at 12 o'clock. */
+  .dots { position: absolute; inset: 0; transition: transform .34s cubic-bezier(.2,.9,.25,1); }
+  .dot { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 50%;
+    background: var(--c); opacity: .55; transform: rotate(var(--a)) translateY(-160px);
+    transition: opacity .2s, width .2s, height .2s, margin .2s, background .3s; }
+  .dot.empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--idle); }
+  .dot.empty.sel { box-shadow: inset 0 0 0 2px var(--ink); }
+  .dot.sel { width: 16px; height: 16px; margin: -8px; opacity: 1; box-shadow: 0 0 14px var(--c); }
+  .dot.attention { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 18px 4px var(--attention); opacity: 1; } }
+
+  .center { position: absolute; inset: 52px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; gap: 6px; }
+  .center.slide-next { animation: slide-next .24s cubic-bezier(.2,.8,.2,1); }
+  .center.slide-prev { animation: slide-prev .24s cubic-bezier(.2,.8,.2,1); }
+  @keyframes slide-next { from { transform: translateY(16px); opacity: 0; } }
+  @keyframes slide-prev { from { transform: translateY(-16px); opacity: 0; } }
+  .summary { font: 600 11px/1 "SF Mono", ui-monospace, monospace; letter-spacing: .08em; color: var(--muted);
+    text-transform: uppercase; }
+  .state { font: 700 13px/1 "SF Mono", ui-monospace, monospace; letter-spacing: .14em; color: var(--c);
+    text-transform: uppercase; margin-top: 6px; }
+  .name { font-size: 21px; font-weight: 650; line-height: 1.15; max-width: 230px; overflow: hidden;
+    text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .meta { font: 12px/1.2 "SF Mono", ui-monospace, monospace; color: var(--muted); }
+  .detail { font-size: 12.5px; color: #c9c6bf; max-width: 220px; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 3; -webkit-box-orient: vertical; min-height: 3.9em; }
+  .counter { font: 600 11px/1 "SF Mono", ui-monospace, monospace; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .halo { position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 3px var(--c);
+    opacity: .22; transition: box-shadow .3s; }
+  .halo.attention { animation: halo 1.1s ease-in-out infinite; }
+  @keyframes halo { 50% { opacity: .7; } }
+
+  .side { display: flex; flex-direction: column; gap: 10px; }
+  .btn { width: 64px; height: 64px; border-radius: 16px; border: 1px solid #2c2d31; background: #17181b;
+    color: var(--ink); font: 600 22px/1 -apple-system, system-ui; cursor: pointer; }
+  .btn:hover { background: #1f2024; }
+  .btn:active { transform: scale(.96); }
+  .btn small { display: block; font: 500 10px/1.4 "SF Mono", ui-monospace, monospace; color: var(--muted); margin-top: 4px; }
+
+  /* Fixed and fixed-height: new log lines never move the knob. */
+  footer { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; padding: 8px 14px;
+    display: grid; grid-template-columns: max-content 1fr; gap: 18px; background: var(--bg);
+    font: 11px/18px "SF Mono", ui-monospace, monospace; color: var(--muted); }
+  footer > *, #log li { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conn::before { content: "●"; margin-right: 6px; color: var(--attention); }
+  .conn.on::before { color: var(--done); }
+  #log { margin: 0; padding: 0; list-style: none; height: 36px; overflow: hidden; }
+  kbd { white-space: nowrap; font: inherit; color: var(--ink); border: 1px solid #2c2d31; border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="knob" id="knob" data-testid="knob" title="wheel: switch workspace · click: enter · hold: next agent · double-click: send">
+      <div class="ring" id="ring"></div>
+      <div class="screen">
+        <div class="halo" id="halo"></div>
+        <div class="dots" id="dots"></div>
+        <div class="center">
+          <div class="summary" id="summary">connecting…</div>
+          <div class="state" id="state"></div>
+          <div class="name" id="name" data-testid="workspace-name"></div>
+          <div class="meta" id="meta"></div>
+          <div class="detail" id="detail"></div>
+          <div class="counter" id="counter"></div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <button class="btn" id="next" data-testid="next-button">→<small>next</small></button>
+      <button class="btn" id="send" data-testid="send-button">⏎<small>send</small></button>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      <div class="conn" id="conn">bridge offline</div>
+      <div><kbd>wheel</kbd> workspace · <kbd>click</kbd> enter · <kbd>hold</kbd> agent · <kbd>→</kbd> next · <kbd>dbl</kbd> send</div>
+    </div>
+    <ul id="log"></ul>
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const COLORS = { working: "var(--working)", attention: "var(--attention)", done: "var(--done)", idle: "var(--idle)" };
+const WHEEL_DETENT = 60;      // wheel delta per knob detent
+const RING_DEG = 18;          // how far the metal ring turns per detent
+const DOUBLE_CLICK_MS = 260;  // a click waits this long to see whether it becomes a double-click
+
+let socket, worktrees = [], activeIndex = 0, clickTimer = null;
+const COMMIT_MS = 1000;       // the knob rests this long before Orca is told to switch
+const GO_PATIENCE_MS = 4000;  // how long the screen keeps the choice while the bridge finds the slot
+let chosenId = null, commitTimer = null, chosenUntil = 0;
+let wheelAccum = 0, ringTurns = 0, dotsAngle = 0, shownId = null, dotIds = "";
+/** The newest event seq this page has pulsed for; null until the first state arrives. */
+let lastSeq = null;
+
+/** The bridge sends each agent's bucket (protocol.md § Buckets). */
+const bucket = (agent) => agent?.bucket || "idle";
+
+/** The agent a workspace is judged by: the one that most needs you — the bridge's `lead`. */
+function leadAgent(worktree) {
+  return worktree?.agents.find((a) => a.id === worktree.lead?.id) || worktree?.agents[0];
+}
+
+/** worktree id → agent id picked by holding the knob; otherwise the screen shows the lead agent. */
+const pickedAgent = new Map();
+function shownAgent(worktree) {
+  return worktree?.agents.find((a) => a.id === pickedAgent.get(worktree.id)) || leadAgent(worktree);
+}
+
+function ago(ms) {
+  if (!ms) return "";
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.round(s / 60) + "m";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+}
+
+/** `mcp__plugin_playwright_playwright__browser_take_screenshot` → `browser_take_screenshot`. */
+function toolLabel(tool) {
+  return String(tool).split("__").pop();
+}
+
+function log(text) {
+  const li = document.createElement("li");
+  li.textContent = new Date().toLocaleTimeString() + "  " + text;
+  $("log").prepend(li);
+  while ($("log").children.length > 2) $("log").lastChild.remove();
+}
+
+/** Sound effects: a soft detent click and the vibration-motor hum. Audio starts after the first click or key. */
+let audio;
+function tone(freq, start, length, peak, type = "sine") {
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    const t = audio.currentTime + start;
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t); osc.stop(t + length + 0.02);
+  } catch { /* no audio until the page got a user gesture */ }
+}
+const tick = () => tone(2200, 0, 0.018, 0.05, "triangle");
+
+/** The vibration motor: a shake plus a low hum. One pulse when done, two when it needs you. */
+function buzz(times) {
+  const knob = $("knob");
+  knob.classList.remove("buzz", "buzz2");
+  void knob.offsetWidth;
+  knob.classList.add(times > 1 ? "buzz2" : "buzz");
+  for (let k = 0; k < times; k++) tone(140, k * 0.5, 0.32, 0.25);
+}
+
+/** Dots are built once per workspace list and only recoloured afterwards, so the dial can rotate. */
+function buildDots() {
+  const ids = worktrees.map((w) => w.id).join("|");
+  if (ids === dotIds) return;
+  dotIds = ids;
+  const n = worktrees.length;
+  $("dots").replaceChildren(...worktrees.map((w, i) => {
+    const dot = document.createElement("div");
+    dot.style.setProperty("--a", (i * 360) / n + "deg");
+    return dot;
+  }));
+}
+
+/** Rotates the dial so the active workspace sits at 12 o'clock, the short way round. */
+function aimDots() {
+  const n = worktrees.length;
+  if (!n) return;
+  const target = (-activeIndex * 360) / n;
+  dotsAngle = target + 360 * Math.round((dotsAngle - target) / 360);
+  $("dots").style.transform = `rotate(${dotsAngle}deg)`;
+}
+
+function spinRing() {
+  $("ring").style.transform = `rotate(${(ringTurns + wheelAccum / WHEEL_DETENT) * RING_DEG}deg)`;
+}
+
+function render(direction = 0) {
+  const n = worktrees.length;
+  const counts = { working: 0, attention: 0, done: 0, idle: 0 };
+  worktrees.forEach((w) => w.agents.forEach((a) => counts[bucket(a)]++));
+  $("summary").textContent = [counts.attention && counts.attention + " waiting", counts.working && counts.working + " working",
+    counts.done && counts.done + " done"].filter(Boolean).join(" · ") || (n ? "all quiet" : "no workspaces");
+  if (!n) return;
+
+  buildDots();
+  [...$("dots").children].forEach((dot, i) => {
+    const w = worktrees[i];
+    const kind = w.agents.length ? bucket(leadAgent(w)) : "idle";
+    dot.className = "dot " + kind + (i === activeIndex ? " sel" : "") + (w.agents.length ? "" : " empty");
+    dot.style.setProperty("--c", COLORS[kind]);
+  });
+  aimDots();
+
+  const w = worktrees[activeIndex];
+  if (w.id !== shownId) {
+    const center = document.querySelector(".center");
+    center.classList.remove("slide-next", "slide-prev");
+    if (shownId && direction) { void center.offsetWidth; center.classList.add(direction > 0 ? "slide-next" : "slide-prev"); }
+    shownId = w.id;
+  }
+  const a = shownAgent(w);
+  const kind = a ? bucket(a) : "idle";
+  for (const el of [$("state"), $("halo")]) el.style.setProperty("--c", COLORS[kind]);
+  $("halo").className = "halo " + kind;
+  $("state").textContent = !a ? "no agents" : kind === "attention" ? "needs you" : String(a.state || kind);
+  $("name").textContent = w.name;
+  $("meta").textContent = [w.repo !== w.name && w.repo, a && (a.chat ? "chat" : "terminal"), a?.kind]
+    .filter(Boolean).join(" · ");
+  $("detail").textContent = !a ? "" : kind === "working" && a.tool
+    ? "▸ " + toolLabel(a.tool) + (a.last ? " — " + a.last : "")
+    : (a.last || a.prompt || "");
+  $("counter").textContent = `${activeIndex + 1}/${n}` + (w.agents.length > 1 ? ` · agent ${w.agents.indexOf(a) + 1}/${w.agents.length}` : "") +
+    (a ? ` · ${ago(a.since)}` : "");
+}
+
+/** Pulses once for a batch of bridge events: 2 when any needs you, else 1. Old or repeated seqs are skipped. */
+function onEvents(events) {
+  let pulses = 0;
+  for (const e of events || []) {
+    if (lastSeq !== null && e.seq <= lastSeq) continue;
+    lastSeq = e.seq;
+    pulses = Math.max(pulses, e.kind === "attention" ? 2 : 1);
+    log(`${e.worktree}: ${e.kind === "attention" ? "needs you" : "done"}`);
+  }
+  if (pulses) buzz(pulses);
+}
+
+function onState(list, seq) {
+  if (lastSeq === null && typeof seq === "number") lastSeq = seq;  // a fresh page replays no pulses
+  worktrees = (Array.isArray(list) ? list : Object.values(list || {}))
+    .map((w) => ({ ...w, agents: Array.isArray(w.agents) ? w.agents : Object.values(w.agents || {}) }));
+  const previous = activeIndex;
+  const active = worktrees.findIndex((w) => w.active);
+  const chosen = worktrees.findIndex((w) => w.id === chosenId);
+  if (chosen >= 0 && (commitTimer || Date.now() < chosenUntil) && active !== chosen) {
+    activeIndex = chosen;  // still turning, or Orca is on its way there: keep the knob's choice
+  } else {
+    chosenId = null;
+    activeIndex = active >= 0 ? active : Math.min(activeIndex, Math.max(0, worktrees.length - 1));
+  }
+  render(Math.sign(activeIndex - previous));
+}
+
+function send(message) {
+  if (socket?.readyState !== WebSocket.OPEN) return log("bridge offline");
+  socket.send(JSON.stringify(message));
+}
+
+/** The bridge pushes state to one websocket client only, so every client also asks for it: a reply
+ *  always goes back to the client that asked, which keeps a browser tab and the panel in step.
+ *  `since` makes the reply carry the events this page has not pulsed for yet. */
+const ASK_MS = 500;
+let askTimer = null;
+
+function connect() {
+  socket = new WebSocket(`ws://${location.host}/ws`);
+  socket.onopen = () => {
+    $("conn").className = "conn on";
+    $("conn").textContent = "bridge online";
+    const hello = () => send(lastSeq === null ? { cmd: "hello" } : { cmd: "hello", since: lastSeq });
+    hello();
+    clearInterval(askTimer);
+    askTimer = setInterval(hello, ASK_MS);
+  };
+  socket.onclose = () => {
+    clearInterval(askTimer);
+    $("conn").className = "conn";
+    $("conn").textContent = "bridge offline · retrying";
+    setTimeout(connect, 1500);
+  };
+  socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === "state") { onState(msg.worktrees, msg.seq); onEvents(msg.events); }
+    else if (msg.type === "event") onEvents([msg]);
+    else if (msg.type === "ack" && !msg.ok) log(`${msg.cmd}: failed${msg.note ? " — " + msg.note : ""}`);
+  };
+}
+
+/** Sends the knob's choice to Orca. The screen holds that choice while Orca gets there. */
+function commit() {
+  clearTimeout(commitTimer);
+  commitTimer = null;
+  const w = worktrees[activeIndex];
+  if (!w) return;
+  chosenUntil = Date.now() + GO_PATIENCE_MS;
+  send({ cmd: "go", id: w.id, pane: shownAgent(w)?.id });
+  log("go → " + w.name + (w.repo !== w.name ? " · " + w.repo : ""));
+}
+
+/** Hold: the next agent of the workspace on screen, shown in Orca right away. */
+function nextAgent() {
+  const w = worktrees[activeIndex];
+  if (!w || w.agents.length < 2) return log("only one agent here");
+  const at = w.agents.indexOf(shownAgent(w));
+  pickedAgent.set(w.id, w.agents[(at + 1) % w.agents.length].id);
+  chosenId = w.id;
+  render();
+  commit();
+}
+
+/** One detent moves the choice on the screen only; Orca follows once the knob rests for COMMIT_MS. */
+function turn(step) {
+  if (!worktrees.length) return;
+  tick();
+  activeIndex = (activeIndex + step + worktrees.length) % worktrees.length;
+  chosenId = worktrees[activeIndex].id;
+  ringTurns += step;
+  render(step);
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(commit, COMMIT_MS);
+}
+
+/** The wheel anywhere else on the page does nothing: the panel is a screen, not a scrolling page. */
+document.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
+
+/** The ring follows the wheel between detents and snaps onto each one, like a real encoder. */
+let settleTimer = null;
+$("knob").addEventListener("wheel", (event) => {
+  event.preventDefault();
+  $("ring").classList.add("following");
+  wheelAccum += event.deltaY;
+  while (Math.abs(wheelAccum) >= WHEEL_DETENT) {
+    const step = Math.sign(wheelAccum);
+    wheelAccum -= step * WHEEL_DETENT;
+    turn(step);
+  }
+  spinRing();
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => {
+    $("ring").classList.remove("following");
+    wheelAccum = 0;
+    spinRing();
+  }, 140);
+}, { passive: false });
+
+/** A short press enters the workspace (unless a second press makes it a double); a hold flips to the next tab. */
+const HOLD_MS = 450;
+let holdTimer = null, held = false;
+$("knob").addEventListener("pointerdown", () => {
+  held = false;
+  holdTimer = setTimeout(() => { held = true; tick(); nextAgent(); }, HOLD_MS);
+});
+for (const type of ["pointerup", "pointerleave"]) $("knob").addEventListener(type, () => clearTimeout(holdTimer));
+$("knob").addEventListener("click", () => {
+  if (held || clickTimer) return;
+  clickTimer = setTimeout(() => {
+    clickTimer = null;
+    if (commitTimer) commit();
+    send({ cmd: "enter" });
+    log("enter");
+  }, DOUBLE_CLICK_MS);
+});
+$("knob").addEventListener("dblclick", () => {
+  clearTimeout(clickTimer); clickTimer = null;
+  send({ cmd: "send" }); log("send ⏎");
+});
+$("next").addEventListener("click", () => { send({ cmd: "next" }); log("next →"); });
+$("send").addEventListener("click", () => { send({ cmd: "send" }); log("send ⏎"); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowRight") { send({ cmd: "next" }); log("next →"); }
+  if (event.key === "ArrowUp") { turn(-1); spinRing(); }
+  if (event.key === "ArrowDown") { turn(1); spinRing(); }
+});
+
+setInterval(() => render(), 1000);
+connect();
+</script>
+</body>
+</html>

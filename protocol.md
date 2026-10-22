@@ -7,16 +7,23 @@ and this file disagree, one of them is a bug.
 Every message carries `v: 1`. A client that sees a higher `v` should show "update the app" instead of
 guessing.
 
+**Absent means null.** The bridge is Lua, and Lua drops `nil` keys: a field written `X | null` below
+may be missing from the JSON. Decode every such field as optional. Empty lists are always `[]`.
+
 ## Transports
 
 | Transport | Address | Auth | Clients |
 |---|---|---|---|
 | WebSocket | `ws://localhost:7352/ws` | none — localhost only | browser mock, future knob |
-| HTTP | `http://<host>:7352/api/*` | `Authorization: Bearer <token>` on every request | the watch (WebSocket is not allowed on watchOS — TN3135) |
+| HTTP, local | `http://localhost:7352/api/*` | `Authorization: Bearer <token>` on every request | `curl`, local tools |
+| HTTP, remote | `http://<host>:7353/api/*` | `Authorization: Bearer <token>` on every request | the watch (WebSocket is not allowed on watchOS — TN3135) |
 | ntfy | `https://ntfy.sh/<topic>` | the secret topic name | the ntfy iOS app → mirrored to the watch |
 
-The bridge binds `localhost` by default. `interface: "lan"` in the config binds every interface; in that
-mode the WebSocket refuses every command except `hello`, because the WebSocket has no auth.
+**Two listeners.** Port **7352** always binds `localhost` and serves the mock page, the WebSocket and
+`/api/*`. Port **7353** serves `/api/*` and nothing else — no WebSocket, no mock. Only 7353 may be
+reached from outside the Mac: `interface: "lan"` in the config binds 7353 on every interface, and a
+tunnel (`cloudflared tunnel --url http://localhost:7353`) points at 7353. The WebSocket has no auth and
+presses keys, so it must never leave localhost.
 
 ## Shared shapes
 
@@ -30,7 +37,7 @@ mode the WebSocket refuses every command except `hello`, because the WebSocket h
   "branch": "main",       // without refs/heads/
   "active": true,         // the worktree Orca shows now
   "status": "…",          // Orca's worktree status, passed through
-  "lead": Agent | null,   // the agent that most needs the user (see below); null when there are no agents
+  "lead": Agent | null,   // the agent that most needs the user (see below); absent when there are no agents
   "agents": [Agent, …]
 }
 ```
@@ -47,7 +54,7 @@ Worktrees come in `orca worktree ps` order (the CLI does not expose the sidebar 
   "state": "working",     // Orca's raw state, passed through
   "bucket": "working",    // normalised — see Buckets
   "interrupted": false,   // the user stopped the turn (Esc)
-  "tool": "Bash",         // current tool, or null
+  "tool": "Bash",         // current tool, or null (absent)
   "prompt": "…",          // the last user prompt, one line, ≤ 90 characters
   "last": "…",            // the last assistant message, one line, ≤ 140 characters
   "since": 1761160000000  // when the agent entered `state`, epoch ms
@@ -111,13 +118,24 @@ growing across bridge restarts. The bridge keeps the last 100 events.
 | bridge → client | `{type:"state", v:1, seq, worktrees:[Worktree…]}` — pushed whenever the payload changes |
 | bridge → client | `Event` — pushed when it happens |
 | client → bridge | `{cmd:"hello"}` → the current `state` |
-| client → bridge | `{cmd:"go", id}` · `{cmd:"turn", step:±1}` · `{cmd:"enter"}` · `{cmd:"tab"}` · `{cmd:"next"}` · `{cmd:"send"}` → `Ack` |
+| client → bridge | `{cmd:"hello", since}` → the current `state` plus `events:[Event… with seq > since]` |
+| client → bridge | `{cmd:"go", id, pane?}` · `{cmd:"turn", step:±1}` · `{cmd:"enter"}` · `{cmd:"tab"}` · `{cmd:"next"}` · `{cmd:"send"}` → `Ack` |
+
+**A push reaches one WebSocket client only** (`hs.httpserver:send()`; observed by the spike, see
+`bridge/index.html` above `connect()`). So every WebSocket client also sends `hello {since}` about twice
+a second, keeps the newest event `seq` it has handled, and skips events with a `seq` it has already seen.
 
 `Ack` = `{type:"ack", v:1, cmd, ok, note}`. `note` explains a failure (`"Orca is not running"`).
 
 | Command | What Orca does |
 |---|---|
-| `go {id}` | jumps to that worktree with Cmd+1…9; the bridge learns which slot opens which worktree. The ack comes at once; the jump finishes asynchronously — watch `active` in the state |
+| `go {id, pane}` | shows that agent's tab — Orca's own `terminal.reveal` RPC (`bridge/reveal.cjs`): exact, any worktree, no key press, focus stays put. `pane` is the agent `id` (Orca paneKey `<tabId>:<leafId>`). Clients should send the lead's id |
+| `go {id}` | without `pane` (a worktree with no agents): Orca's `worktree.activate` RPC — the worktree as it was last left. Same properties: exact, no key press, focus stays put |
+
+Both `go` forms ack at once; the jump finishes asynchronously — watch `active` in the state.
+
+| Command | What Orca does |
+|---|---|
 | `turn {step}` | Next/Previous worktree (Ctrl+Opt+Cmd+↓/↑, remapped in Orca) |
 | `enter` | Orca comes forward; focus returns to its composer |
 | `tab` | Next tab (Cmd+Shift+]) — the next agent in the worktree |
@@ -134,7 +152,9 @@ Every `/api/*` request needs `Authorization: Bearer <token>`. Without it, or wit
 | `GET /api/ping` | `{v:1, ok:true, at}` — for latency probes |
 | `GET /api/state` | `{v:1, seq, worktrees:[…], events:[]}` |
 | `GET /api/state?since=<seq>` | `{v:1, seq, worktrees:[…], events:[Event… with seq > since]}` |
-| `POST /api/cmd` body `{cmd, id?, step?}` | `Ack`, as on the WebSocket; `hello` is not a command here |
+| `POST /api/cmd` body `{cmd, id?, pane?, step?}` | `Ack`, as on the WebSocket; `hello` is not a command here |
+| `POST /api/cmd` with a body that is not a command | `400 {"error":"bad command"}` |
+| `POST /api/log` body `{text}` | `{v:1, ok:true}` — appends `text` (≤ 4000 bytes) to the bridge trail. A diagnostic aid for clients without a console, such as the transport probe |
 | anything else under `/api/` | `404 {"error":"not found"}` |
 
 **The request returns at once — there is no long-poll.** Hammerspoon's `hs.httpserver` callback must
@@ -177,7 +197,7 @@ goes to ntfy** — the topic is public infrastructure, and its secret name is th
   "token": "<48 hex characters>",     // the HTTP bearer token
   "ntfyTopic": "orca-deck-<24 hex>",  // subscribe to it in the ntfy iOS app
   "ntfy": true,                       // false = never publish
-  "interface": "localhost"            // "localhost" | "lan"
+  "interface": "localhost"            // where port 7353 listens: "localhost" | "lan" (all interfaces)
 }
 ```
 
