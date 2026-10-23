@@ -39,8 +39,9 @@ function core.worktreesOf(doc)
   local worktrees = {}
   for _, worktree in ipairs(((doc or {}).result or {}).worktrees or {}) do
     local agents = {}
+    -- An agent without a paneKey has no id for clients to address; it is left out.
     for _, agent in ipairs(worktree.agents or {}) do
-      agents[#agents + 1] = {
+      if agent.paneKey then agents[#agents + 1] = {
         id = agent.paneKey,
         kind = agent.agentType,
         chat = (agent.paneKey or ""):find("^structured%-agent%-session") ~= nil,
@@ -51,11 +52,11 @@ function core.worktreesOf(doc)
         prompt = core.clip(agent.prompt, 90),
         last = core.clip(agent.lastAssistantMessage, 140),
         since = agent.stateStartedAt,
-      }
+      } end
     end
     worktrees[#worktrees + 1] = {
       id = worktree.worktreeId,
-      name = worktree.displayName or worktree.repo,
+      name = worktree.displayName or worktree.repo or worktree.worktreeId,
       repo = worktree.repo,
       branch = (worktree.branch or ""):gsub("^refs/heads/", ""),
       active = worktree.isActive == true,
@@ -156,6 +157,72 @@ function core.ntfyMessage(event, repo, topic)
     tags = { attention and "warning" or "white_check_mark" },
     priority = attention and 4 or 3,
   }
+end
+
+-- Agent screen (apex-v2) ------------------------------------------------------------------------
+
+core.SAY_MAX = 2000
+local VARIANTS_MAX = 5
+
+--- "structured-agent-session-claude_82c20d91_…:<leaf>" → "claude_82c20d91_…". nil for terminal panes and
+--- for anything that is not a plain id, because the id becomes a file name under next-pending/.
+function core.sessionIdOf(agentId)
+  if type(agentId) ~= "string" then return nil end
+  local id = agentId:match("^structured%-agent%-session%-([^:]+):")
+  if id and id:match("^[%w_%-]+$") then return id end
+  return nil
+end
+
+--- The Next variants of a next-pending file: non-empty trimmed lines, in order, at most 5.
+function core.parseVariants(text)
+  local variants = {}
+  for line in (text or ""):gmatch("[^\n]+") do
+    local variant = line:match("^%s*(.-)%s*$")
+    if variant ~= "" and #variants < VARIANTS_MAX then variants[#variants + 1] = variant end
+  end
+  return variants
+end
+
+--- The message without its trailing run of "Next: `…`" lines (blank lines between them allowed) —
+--- the same run the Stop hook (~/.claude/hooks/next-prefill.sh) turns into variants.
+function core.stripNextLines(message)
+  if type(message) ~= "string" then return "" end
+  local lines = {}
+  for line in (message .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
+  local last = #lines
+  while last > 0 do
+    local line = lines[last]
+    if line:match("^%s*$") or line:match("^%s*Next:%s*`[^`]+`") then last = last - 1 else break end
+  end
+  return (table.concat(lines, "\n", 1, last):match("^%s*(.-)%s*$"))
+end
+
+--- Why a say command cannot run, or nil when it can.
+function core.sayProblem(message)
+  if type(message.id) ~= "string" or message.id == "" then return "say needs an agent id" end
+  if type(message.text) ~= "string" or not message.text:match("%S") then return "say needs text" end
+  if utf8.len(message.text) and utf8.len(message.text) > core.SAY_MAX then
+    return "text is longer than " .. core.SAY_MAX .. " characters"
+  end
+  return nil
+end
+
+--- Why `cmd` may not run over the transport `via` ("ws" or "http <addr>"), or nil when it may.
+--- `say` types into a Claude session that runs with bypassed permissions, so it needs the bearer token:
+--- any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
+function core.commandRefusal(cmd, via)
+  if cmd == "say" and via == "ws" then return "say needs the bearer token: use POST /api/cmd" end
+  return nil
+end
+
+--- The agent with `id` and its worktree, or nil.
+function core.agentById(worktrees, id)
+  for _, worktree in ipairs(worktrees) do
+    for _, agent in ipairs(worktree.agents) do
+      if agent.id == id then return agent, worktree end
+    end
+  end
+  return nil
 end
 
 return core

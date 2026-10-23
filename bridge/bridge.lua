@@ -34,6 +34,15 @@ local EVENT_CAPACITY = 100
 local NTFY_URL = "https://ntfy.sh/"
 local CONFIG_DIR = os.getenv("HOME") .. "/.config/orca-deck"
 local CONFIG = CONFIG_DIR .. "/bridge.json"
+--- agent.cjs reads a chat session's history and sends prompts through Orca's runtime RPCs.
+local AGENT_SCRIPT = DIR .. "agent.cjs"
+--- The Next variants the Stop hook (~/.claude/hooks/next-prefill.sh) queues per chat session;
+--- Hammerspoon's → deletes a file when it inserts its text, and so does a successful `say`.
+local PENDING_DIR = os.getenv("HOME") .. "/.claude/hooks/next-pending/"
+--- How long a fetched full message stays fresh for GET /api/agent.
+local DETAIL_TTL_SECONDS = 3
+--- After a failed history fetch, wait this long before the next one (each fetch starts an Electron process).
+local HISTORY_BACKOFF_SECONDS = 30
 
 --- Orca's own shortcuts (shared/keybindings/definitions-core-*.js). Orca's default worktree chords
 --- are Cmd+Shift+↓/↑, but a focused chat composer keeps those as text selection
@@ -48,11 +57,13 @@ local ORCA_ELECTRON = "/Applications/Orca.app/Contents/MacOS/Orca"
 local PANEL = { w = 560, h = 540 }
 
 --- Test trail: every command, event and change of Orca's active workspace, for reading while testing.
+--- Millisecond stamps, so "tap → Orca focus within 1 s" can be read off the trail.
 local LOG = "/tmp/orca-deck-bridge.log"
 local function trail(message)
   local file = io.open(LOG, "a")
   if not file then return end
-  file:write(os.date("%H:%M:%S ") .. message .. "\n")
+  local now = hs.timer.secondsSinceEpoch()
+  file:write(string.format("%s.%03d %s\n", os.date("%H:%M:%S", math.floor(now)), math.floor((now % 1) * 1000), message))
   file:close()
 end
 
@@ -111,6 +122,16 @@ deckBridge = {
   again = false,
   timers = {},
   tasks = {},
+  --- agentId → {message, at, since}: the full last message from agent.cjs history.
+  details = {},
+  --- agentId → true while a history fetch runs.
+  fetching = {},
+  --- agentId → when the last history fetch failed; no new fetch for HISTORY_BACKOFF_SECONDS after it.
+  failedAt = {},
+  --- agentId → {at, ok, note}: the last say for that agent; ok is nil while it is sending.
+  sends = {},
+  --- agentId → Orca's lastAssistantMessage (cut at 200 characters) — the fallback message.
+  rawLast = {},
 }
 
 --- Defers `fn`; the timer is kept because an unreferenced hs.timer can be collected before it fires.
@@ -159,6 +180,13 @@ local function poll()
     local ok, doc = pcall(hs.json.decode, out or "")
     if code == 0 and ok and type(doc) == "table" then
       local worktrees = core.worktreesOf(doc)
+      local rawLast = {}
+      for _, worktree in ipairs(doc.result and doc.result.worktrees or {}) do
+        for _, agent in ipairs(worktree.agents or {}) do
+          if agent.paneKey then rawLast[agent.paneKey] = agent.lastAssistantMessage end
+        end
+      end
+      deckBridge.rawLast = rawLast
       local fresh, seen = core.transitions(deckBridge.buckets or {}, worktrees)
       deckBridge.buckets = seen
       for _, worktree in ipairs(worktrees) do
@@ -230,6 +258,8 @@ end
 --- presses, and keyboard focus stays where it is. A pane key is "<tabId>:<leafId>".
 local function go(id, pane)
   if type(id) ~= "string" or id == "" then return "go needs an id" end
+  -- reveal.cjs runs after the ack, so a closed Orca must be caught here or the tap fails silently.
+  if not hs.application.get(ORCA_BUNDLE) then return "Orca is not running" end
   if type(pane) == "string" and pane ~= "" then
     local tabId, leafId = pane:match("^(.-):(.+)$")
     return runtime({ DIR .. "reveal.cjs", "pane", id, tabId or pane, leafId }, "reveal")
@@ -246,8 +276,117 @@ local function enter()
   return nil
 end
 
-local function ack(cmd, problem)
-  return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem }
+--- Runs agent.cjs with `args` (and `input` on stdin), then calls back with its decoded JSON line.
+local function agentScript(args, input, done)
+  local task = hs.task.new(ORCA_ELECTRON, function(code, out)
+    local ok, result = pcall(hs.json.decode, (out or ""):match("[^\n]*") or "")
+    done(code == 0 and ok and type(result) == "table" and result or nil,
+      ok and type(result) == "table" and result.error or ("exit " .. code))
+  end, { AGENT_SCRIPT, table.unpack(args) })
+  task:setEnvironment({
+    ELECTRON_RUN_AS_NODE = "1",
+    HOME = os.getenv("HOME"),
+    USER = os.getenv("USER"),
+    TMPDIR = os.getenv("TMPDIR"),
+    PATH = "/usr/bin:/bin",
+  })
+  if #deckBridge.tasks > 8 then table.remove(deckBridge.tasks, 1) end
+  deckBridge.tasks[#deckBridge.tasks + 1] = task  -- held so a running task is not collected
+  -- Before start(): stdin is written once the task runs and then closed (no streaming callback).
+  if input then task:setInput(input) end
+  task:start()
+end
+
+local function readFile(path)
+  local file = io.open(path, "r")
+  if not file then return nil end
+  local text = file:read("a")
+  file:close()
+  return text
+end
+
+--- Fetches the full last message of a chat agent in the background; the next GET /api/agent sees it.
+local function refreshDetail(agent, sessionId)
+  if deckBridge.fetching[agent.id] then return end
+  local failedAt = deckBridge.failedAt[agent.id]
+  if failedAt and hs.timer.secondsSinceEpoch() - failedAt < HISTORY_BACKOFF_SECONDS then return end
+  deckBridge.fetching[agent.id] = true
+  agentScript({ "history", sessionId }, nil, function(result, problem)
+    deckBridge.fetching[agent.id] = nil
+    if result then
+      deckBridge.failedAt[agent.id] = nil
+      deckBridge.details[agent.id] = { message = result.message, at = hs.timer.secondsSinceEpoch(), since = agent.since }
+    else
+      deckBridge.failedAt[agent.id] = hs.timer.secondsSinceEpoch()
+      trail("history " .. sessionId .. " failed: " .. tostring(problem))
+    end
+  end)
+end
+
+--- GET /api/agent: the agent, its full last message (or Orca's 200-character cut while the full one is
+--- fetched) without the trailing Next lines, the pending Next variants, and the last say's outcome.
+local function agentDetail(id)
+  local agent, worktree = core.agentById(deckBridge.worktrees, id)
+  if not agent then return nil end
+  local sessionId = core.sessionIdOf(id)
+  local cached = deckBridge.details[id]
+  if sessionId and (not cached or cached.since ~= agent.since
+      or hs.timer.secondsSinceEpoch() - cached.at > DETAIL_TTL_SECONDS) then
+    refreshDetail(agent, sessionId)
+  end
+  -- An empty history text (40 items of tool calls) counts as missing: Orca's 200-character cut is better.
+  local fresh = cached and cached.since == agent.since and type(cached.message) == "string" and cached.message ~= ""
+  return {
+    v = core.PROTOCOL,
+    id = agent.id,
+    worktreeId = worktree.id,
+    worktree = worktree.name,
+    kind = agent.kind,
+    chat = agent.chat,
+    state = agent.state,
+    bucket = agent.bucket,
+    since = agent.since,
+    message = core.stripNextLines(fresh and cached.message or deckBridge.rawLast[id] or ""),
+    -- A terminal agent has no history to fetch: its 200-character cut is all there is.
+    full = fresh == true or sessionId == nil,
+    next = sessionId and core.parseVariants(readFile(PENDING_DIR .. sessionId)) or {},
+    send = deckBridge.sends[id],
+  }
+end
+
+--- Sends `text` to a chat agent as a user prompt (agent.cjs say). Returns a problem, or nil when the send
+--- started; the outcome lands in deckBridge.sends and GET /api/agent. The text never goes to the trail.
+local function say(message)
+  local problem = core.sayProblem(message)
+  if problem then return problem end
+  local agent = core.agentById(deckBridge.worktrees, message.id)
+  if not agent then return "unknown agent" end
+  local sessionId = core.sessionIdOf(agent.id)
+  if not sessionId then return "only chat agents take text" end
+  if not hs.application.get(ORCA_BUNDLE) then return "Orca is not running" end
+  local text = message.text:match("^%s*(.-)%s*$")
+  local started = hs.timer.secondsSinceEpoch()
+  deckBridge.sends[agent.id] = { at = math.floor(started * 1000), note = "sending" }
+  agentScript({ "say", sessionId }, text, function(result, failure)
+    local at = math.floor(hs.timer.secondsSinceEpoch() * 1000)
+    if result and result.sent then
+      deckBridge.sends[agent.id] = { at = at, ok = true }
+      local pending = PENDING_DIR .. sessionId
+      for _, variant in ipairs(core.parseVariants(readFile(pending))) do
+        if variant == text then os.remove(pending) break end
+      end
+      trail(string.format("say %s (%d chars) → sent in %d ms", sessionId, utf8.len(text) or #text, math.floor((hs.timer.secondsSinceEpoch() - started) * 1000)))
+      later(REPOLL_SECONDS, poll)
+    else
+      deckBridge.sends[agent.id] = { at = at, ok = false, note = tostring(failure) }
+      trail(string.format("say %s (%d chars) → failed: %s", sessionId, utf8.len(text) or #text, tostring(failure)))
+    end
+  end)
+  return nil
+end
+
+local function ack(cmd, problem, note)
+  return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem or note }
 end
 
 --- Runs one client command (both transports) and returns its ack.
@@ -256,6 +395,8 @@ local function run(message, via)
   local front = hs.application.frontmostApplication()
   trail(string.format("cmd %s%s via %s · front=%s", tostring(cmd), message.step and (" " .. message.step) or "", via,
     front and front:name() or "?"))
+  local refusal = core.commandRefusal(cmd, via)
+  if refusal then return ack(tostring(cmd), refusal) end
   if cmd == "go" then
     return ack(cmd, go(message.id, message.pane))
   elseif cmd == "turn" then
@@ -266,6 +407,9 @@ local function run(message, via)
     return ack(cmd, press(NEXT_TAB))
   elseif cmd == "next" then
     return ack(cmd, press({ mods = {}, key = "right" }))
+  elseif cmd == "say" then
+    local problem = say(message)
+    return ack(cmd, problem, problem == nil and "sending" or nil)
   elseif cmd == "send" then
     return ack(cmd, press({ mods = {}, key = "return" }))
   end
@@ -309,6 +453,10 @@ local function onApi(method, route, query, headers, body)
       return json(400, { error = "bad command" })
     end
     return json(200, run(message, "http " .. from))
+  elseif method == "GET" and route == "/api/agent" then
+    local detail = agentDetail(query.id)
+    if not detail then return json(404, { error = "unknown agent" }) end
+    return json(200, detail)
   elseif method == "POST" and route == "/api/log" then
     local ok, message = pcall(hs.json.decode, body or "")
     if not ok or type(message) ~= "table" or type(message.text) ~= "string" then return json(400, { error = "bad log" }) end

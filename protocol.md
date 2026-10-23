@@ -42,7 +42,9 @@ presses keys, so it must never leave localhost.
 }
 ```
 
-Worktrees come in `orca worktree ps` order (the CLI does not expose the sidebar order).
+Worktrees come in `orca worktree ps` order (the CLI does not expose the sidebar order). `name` falls back
+to the repo, then to the id, so it is always present. An agent Orca reports without a paneKey is left out —
+a client could not address it.
 
 ### Agent
 
@@ -73,8 +75,9 @@ Worktrees come in `orca worktree ps` order (the CLI does not expose the sidebar 
 Source: Orca's `AGENT_STATUS_STATES = ['working', 'blocked', 'waiting', 'done']`
 (`/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out/shared/agent-status-types.js:29`);
 `agent-session-attention.js:110` reports `blocked` when the agent awaits the user.
-**Open check:** only `working` and `done` have been observed in `orca worktree ps --json` so far
-(2026-10-22). Record the first observed `blocked` / `waiting` here.
+**Observed live:** `blocked` — first at 2026-10-22 23:12, 9 times by 00:35, e.g. while a Claude session
+waited on a question for the user (bridge trail: `event attention (orca state blocked)`). `waiting` has
+not been observed yet; it stays in the `attention` bucket on the strength of Orca's source.
 
 ### Lead agent
 
@@ -154,6 +157,8 @@ Every `/api/*` request needs `Authorization: Bearer <token>`. Without it, or wit
 | `GET /api/state?since=<seq>` | `{v:1, seq, worktrees:[…], events:[Event… with seq > since]}` |
 | `POST /api/cmd` body `{cmd, id?, pane?, step?}` | `Ack`, as on the WebSocket; `hello` is not a command here |
 | `POST /api/cmd` with a body that is not a command | `400 {"error":"bad command"}` |
+| `GET /api/agent?id=<agent id>` | `AgentDetail` (below); `404 {"error":"unknown agent"}` |
+| `POST /api/cmd {cmd:"say", id:<agent id>, text}` | `Ack` with `note:"sending"` — the send runs in the background; its outcome appears as `send` in `AgentDetail` |
 | `POST /api/log` body `{text}` | `{v:1, ok:true}` — appends `text` (≤ 4000 bytes) to the bridge trail. A diagnostic aid for clients without a console, such as the transport probe |
 | anything else under `/api/` | `404 {"error":"not found"}` |
 
@@ -169,6 +174,42 @@ Client loop:
    `seq`.
 3. If `since` is greater than the bridge's `seq` (the client's clock ran ahead of a restarted bridge),
    the bridge returns no events and its own `seq`; the client stores that `seq` and continues.
+
+## Agent screen (Apex 0.2)
+
+### AgentDetail — `GET /api/agent?id=<agent id>`
+
+```jsonc
+{
+  "v": 1,
+  "id": "structured-agent-session-claude_…:…",   // the agent id from the state
+  "worktreeId": "…", "worktree": "main",
+  "kind": "claude", "chat": true, "state": "done", "bucket": "done", "since": 1792708619802,
+  "message": "…",       // the full last assistant message, its trailing `Next: ` lines removed
+  "full": true,         // false: `message` is still Orca's 200-character cut, the full one is being fetched
+  "next": ["…", "…"],   // the pending Next variants (≤ 5); [] when none or already used
+  "send": { "at": 1792708619802, "ok": true, "note": "…" }   // the last say; absent before the first;
+                                                            // ok absent while it is still sending
+}
+```
+
+- The full message comes from Orca's `agentSession.history` (`bridge/agent.cjs history`). The bridge
+  answers at once from a cache and refreshes it in the background (fresh for 3 s, and again whenever
+  `since` changes), so the first request after a change may carry `full: false`. Poll again.
+- `next` is read from `~/.claude/hooks/next-pending/<session id>`, the file the user's Stop hook writes
+  per Orca chat session (`<session id>` is the part of the agent id between `structured-agent-session-`
+  and `:`). Terminal agents have no such file: `next` is `[]`.
+
+### say — `POST /api/cmd {cmd:"say", id, text}`
+
+- Sends `text` (≤ 2000 characters) to that chat agent as a user prompt through Orca's own
+  `agentSession.send` (`bridge/agent.cjs say`, text on stdin): no key presses, Orca's focus stays put.
+- Refused at once with a note: no text, unknown agent, a terminal agent, Orca not running — and **over the
+  WebSocket**: `say` needs the bearer token (`POST /api/cmd`), because any web page can open
+  `ws://localhost:7352/ws` and the agents run with bypassed permissions.
+- When the sent text equals a pending Next variant, the bridge deletes that pending file — the same thing
+  Hammerspoon does when → inserts it, so the Mac does not offer a used Next again.
+- The trail records `say <session> (<n> chars) → sent in <ms> ms | failed: <reason>` — never the text.
 
 ## ntfy
 

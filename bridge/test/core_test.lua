@@ -121,6 +121,19 @@ test("worktreesOf survives a broken document", function()
   eq(#core.worktreesOf({}), 0)
 end)
 
+test("worktreesOf: the name falls back to the id when Orca gives neither name nor repo", function()
+  local w = core.worktreesOf(psDoc({ { worktreeId = "w9", agents = {} } }))[1]
+  eq(w.name, "w9")
+end)
+
+test("worktreesOf drops an agent without a paneKey — clients need an id", function()
+  local w = core.worktreesOf(psDoc({ { worktreeId = "w1", repo = "r", agents = {
+    { agentType = "claude", state = "working" }, agent("b", "done") } } }))[1]
+  eq(#w.agents, 1)
+  eq(w.agents[1].id, "b")
+  eq(w.lead.id, "b")
+end)
+
 -- transitions ----------------------------------------------------------------------------------
 
 local function oneWorktree(...)
@@ -248,6 +261,56 @@ test("ntfyMessage carries exactly topic, title, message, tags, priority", functi
   for k in pairs(m) do keys[#keys + 1] = k end
   table.sort(keys)
   eq(table.concat(keys, ","), "message,priority,tags,title,topic")
+end)
+
+-- agent screen helpers (apex-v2) ---------------------------------------------------------------
+
+test("sessionIdOf reads the session id out of a chat paneKey", function()
+  eq(core.sessionIdOf("structured-agent-session-claude_82c20d91_ca03:98df74f5-2373"), "claude_82c20d91_ca03")
+  eq(core.sessionIdOf("tab-1:leaf-1"), nil, "a terminal pane has no session id")
+  eq(core.sessionIdOf(nil), nil)
+end)
+
+test("sessionIdOf accepts only safe ids — they become file names", function()
+  eq(core.sessionIdOf("structured-agent-session-../../etc:x"), nil)
+end)
+
+test("parseVariants keeps the non-empty trimmed lines, at most 5", function()
+  local v = core.parseVariants("  run the tests \n\nswitch task\n")
+  eq(#v, 2); eq(v[1], "run the tests"); eq(v[2], "switch task")
+  eq(#core.parseVariants(nil), 0)
+  eq(#core.parseVariants("a\nb\nc\nd\ne\nf\ng"), 5)
+end)
+
+test("stripNextLines removes the trailing run of Next lines", function()
+  local m = "Done.\n\nNext: `commit it`\n\nNext: `run e2e`\n"
+  eq(core.stripNextLines(m), "Done.")
+end)
+
+test("stripNextLines keeps Next lines that are not trailing", function()
+  local m = "Example: Next: `x` in the middle\nReal end."
+  eq(core.stripNextLines(m), m)
+  eq(core.stripNextLines(nil), "")
+end)
+
+test("sayProblem validates the say command", function()
+  eq(core.sayProblem({ id = "a", text = "hi" }), nil)
+  eq(core.sayProblem({ id = "a", text = "   " }), "say needs text")
+  eq(core.sayProblem({ text = "hi" }), "say needs an agent id")
+  eq(core.sayProblem({ id = "a", text = string.rep("x", 2001) }), "text is longer than 2000 characters")
+end)
+
+test("agentById finds the agent and its worktree", function()
+  local list = core.worktreesOf(psDoc({ { worktreeId = "w1", displayName = "main", repo = "r", agents = { agent("x:1", "done") } } }))
+  local a, w = core.agentById(list, "x:1")
+  eq(a.id, "x:1"); eq(w.id, "w1")
+  eq(core.agentById(list, "nope"), nil)
+end)
+
+test("commandRefusal: say needs the token, so the unauthenticated websocket may not say", function()
+  eq(core.commandRefusal("say", "ws"), "say needs the bearer token: use POST /api/cmd")
+  eq(core.commandRefusal("say", "http 192.168.31.83"), nil)
+  eq(core.commandRefusal("go", "ws"), nil)
 end)
 
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))
