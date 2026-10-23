@@ -1,0 +1,37 @@
+# XcodeGen spec for the THROWAWAY transport probe (Phase 2 of .work/plans/watch-remote.md).
+# Generate with probe/configure.sh — it writes Probe/Secrets.generated.swift, then runs xcodegen.
+#
+# NSAllowsArbitraryLoads is ON here so ATS never confounds the transport numbers.
+# It must NOT migrate to watch/ — the real app gets a narrow exception or HTTPS.
+name: OrcaDeckProbe
+options:
+  bundleIdPrefix: com.floatrx.orcadeck
+  deploymentTarget:
+    watchOS: "10.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  OrcaDeckProbe:
+    type: application
+    platform: watchOS
+    sources:
+      - Probe
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.floatrx.orcadeck.probe
+        TARGETED_DEVICE_FAMILY: "4"
+    info:
+      path: Probe/Info.plist
+      properties:
+        CFBundleDisplayName: Deck Probe
+        WKApplication: true
+        WKWatchOnly: true
+        WKBackgroundModes:
+          - mindfulness
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
