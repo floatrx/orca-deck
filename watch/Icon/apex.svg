@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Apex app icon: an orca's dorsal fin is the apex; the beacon (Apex's needs-you orange) sits at its
+       tip, sending sonar arcs. watchOS masks the icon to a circle — keep the art inside ~860 px. -->
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="78%" r="85%">
+      <stop offset="0" stop-color="#5b9fcb"/>
+      <stop offset="0.45" stop-color="#1d4c72"/>
+      <stop offset="1" stop-color="#071624"/>
+    </radialGradient>
+    <linearGradient id="fin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232c35"/>
+      <stop offset="1" stop-color="#05080b"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d2a42"/>
+      <stop offset="1" stop-color="#040b13"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff7a1a" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <!-- sonar arcs -->
+  <g fill="none" stroke="#ff8a33" stroke-linecap="round">
+    <path d="M 487 300 A 105 105 0 0 1 697 300" stroke-width="18" stroke-opacity="0.75"/>
+    <path d="M 427 300 A 165 165 0 0 1 757 300" stroke-width="14" stroke-opacity="0.38"/>
+  </g>
+  <!-- the fin: tall, convex leading edge, slightly concave trailing edge -->
+  <path d="M 292 772 C 372 600, 486 430, 592 318 C 588 470, 640 640, 772 772 Z" fill="url(#fin)"/>
+  <path d="M 292 772 C 372 600, 486 430, 592 318" fill="none" stroke="#a8cbe4" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round"/>
+  <!-- the sea -->
+  <path d="M 0 760 C 170 736, 300 790, 512 768 C 720 746, 860 790, 1024 762 L 1024 1024 L 0 1024 Z" fill="url(#sea)"/>
+  <path d="M 150 766 C 280 748, 390 790, 512 774 C 640 758, 760 786, 880 768" fill="none" stroke="#7fbde6" stroke-opacity="0.35" stroke-width="7" stroke-linecap="round"/>
+  <!-- the beacon -->
+  <circle cx="592" cy="300" r="80" fill="url(#glow)"/>
+  <circle cx="592" cy="300" r="30" fill="#ff7a1a"/>
+  <circle cx="582" cy="290" r="9" fill="#ffd8b8"/>
+</svg>

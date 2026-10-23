@@ -1,0 +1,103 @@
+{
+  "v": 1,
+  "seq": 1792702308450,
+  "worktrees": [
+    {
+      "id": "w-empty::/Users/x/orca/projects/generic",
+      "name": "master",
+      "repo": "generic",
+      "branch": "master",
+      "active": false,
+      "status": "inactive",
+      "agents": []
+    },
+    {
+      "id": "w-deck::/Users/x/Projects/orca-deck",
+      "name": "main",
+      "repo": "orca-deck",
+      "branch": "main",
+      "active": true,
+      "status": "active",
+      "lead": {
+        "id": "structured-agent-session-claude_1:aaa",
+        "kind": "claude",
+        "chat": true,
+        "state": "blocked",
+        "bucket": "attention",
+        "interrupted": false,
+        "prompt": "build the watch app",
+        "last": "Which transport?",
+        "since": 1792702900000
+      },
+      "agents": [
+        {
+          "id": "tab-1:leaf-1",
+          "kind": "claude",
+          "chat": false,
+          "state": "working",
+          "bucket": "working",
+          "interrupted": false,
+          "tool": "Bash",
+          "prompt": "",
+          "last": "",
+          "since": 1792702950000
+        },
+        {
+          "id": "structured-agent-session-claude_1:aaa",
+          "kind": "claude",
+          "chat": true,
+          "state": "blocked",
+          "bucket": "attention",
+          "interrupted": false,
+          "prompt": "build the watch app",
+          "last": "Which transport?",
+          "since": 1792702900000
+        }
+      ]
+    },
+    {
+      "id": "w-odd",
+      "name": "odd",
+      "repo": "odd",
+      "branch": "",
+      "active": false,
+      "status": "inactive",
+      "lead": {
+        "id": "x:y",
+        "state": "unverifiable",
+        "bucket": "something-new",
+        "since": 1792702000000
+      },
+      "agents": [
+        {
+          "id": "x:y",
+          "state": "unverifiable",
+          "bucket": "something-new",
+          "since": 1792702000000
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "type": "event",
+      "v": 1,
+      "seq": 1792702308449,
+      "kind": "done",
+      "worktreeId": "w-deck::/Users/x/Projects/orca-deck",
+      "worktree": "main",
+      "agentId": "tab-1:leaf-1",
+      "at": 1792702940000
+    },
+    {
+      "type": "event",
+      "v": 1,
+      "seq": 1792702308450,
+      "kind": "attention",
+      "worktreeId": "w-deck::/Users/x/Projects/orca-deck",
+      "worktree": "main",
+      "agentId": "structured-agent-session-claude_1:aaa",
+      "at": 1792702950000
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "id": "structured-agent-session-claude_1:aaa",
+  "worktreeId": "w-deck",
+  "worktree": "main",
+  "kind": "claude",
+  "chat": true,
+  "state": "done",
+  "bucket": "done",
+  "since": 1792708619802,
+  "message": "Done. The watch app builds.",
+  "full": true,
+  "next": ["commit and push", "run the e2e suite"],
+  "send": { "at": 1792708619802, "ok": true }
+}

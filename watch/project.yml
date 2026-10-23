@@ -1,0 +1,71 @@
+# XcodeGen spec for Apex — the orca-deck Apple Watch remote (.work/plans/watch-remote.md, Phases 3–5).
+# Generate with watch/configure.sh: it writes Apex/Config.generated.swift (bridge URL + token, gitignored)
+# and then runs xcodegen.
+name: Apex
+options:
+  bundleIdPrefix: com.floatrx.orcadeck
+  deploymentTarget:
+    watchOS: "10.0"
+packages:
+  ApexCore:
+    path: ApexCore
+settings:
+  base:
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.3"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Apex:
+    type: application
+    platform: watchOS
+    scheme:
+      testTargets:
+        - ApexUITests
+    sources:
+      - Apex
+    dependencies:
+      - package: ApexCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.floatrx.orcadeck.apex
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Apex/Info.plist
+      properties:
+        CFBundleDisplayName: Apex
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WKApplication: true
+        WKWatchOnly: true
+        NSLocalNetworkUsageDescription: Apex talks to the orca-deck bridge on your Mac to show and focus your agents.
+        # Plain HTTP to the Mac's LAN IP. NSAllowsLocalNetworking covers IP addresses, unqualified and
+        # .local names (Apple: NSAllowsLocalNetworking) — never NSAllowsArbitraryLoads here.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          # Belt and braces: since iOS 17 / watchOS 10 Apple also documents CIDR ranges in
+          # NSExceptionDomains for IP addresses. Private ranges only, plain HTTP allowed.
+          NSExceptionDomains:
+            192.168.0.0/16:
+              NSExceptionAllowsInsecureHTTPLoads: true
+            10.0.0.0/8:
+              NSExceptionAllowsInsecureHTTPLoads: true
+            172.16.0.0/12:
+              NSExceptionAllowsInsecureHTTPLoads: true
+        WKBackgroundModes:
+          - mindfulness
+  # UI tests on the watchOS simulator: crown detents, swipes, tap → go, Send/Undo (acceptance of apex-v2).
+  ApexUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources:
+      - ApexUITests
+    dependencies:
+      - target: Apex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.floatrx.orcadeck.apex.uitests
+        TEST_TARGET_NAME: Apex
+        GENERATE_INFOPLIST_FILE: YES

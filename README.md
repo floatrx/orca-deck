@@ -95,6 +95,67 @@ hs -c 'deckBridge.stop()' </dev/null    # and back
 
 The spike does not know about this bridge — do not start the spike while this one runs.
 
+## Apex — the watch app
+
+`watch/` holds **Apex**, the knob mock adapted to the watch's rounded-rectangle display: worktree dots ride a
+track that follows the screen's shape, the chosen one at top centre. The crown moves them one worktree per
+detent (one haptic tick each, wrapping round); the
+centre shows the chosen worktree's state, name and what its agent is doing. A tap or Double Tap focuses it
+in Orca; a long press shows the worktree's next agent. Events buzz the wrist: 1 haptic for `done`, 2 for
+`needs you`, plus a shake of the dial.
+
+**Swipe left** for the agent page: the agent's full last message (the crown scrolls it) and the **Next card**
+pinned at the bottom — the user's own `Next:` suggestions (from the Stop hook's pending file). **Send** waits
+3 s with an Undo, then delivers the prompt through Orca's own `agentSession.send` (`bridge/agent.cjs`): no key
+presses, Orca's focus stays put. See `protocol.md` § Agent screen.
+
+The app is alive: the background glows in the agent's colour, a comet runs the track while it works, sonar
+rings leave the chosen dot while it needs you. Every motion follows the track: a crown step slides the dots
+along it frame by frame (`Dial.slide`), never in a straight line. There is no system clock — the whole display
+belongs to the app; the track's corners are concentric with the display (`GeometryProxy.concentricCornerRadii`,
+watchOS 27; transient readings are ignored).
+
+**Swipe right** for Settings: the main page's **Layout** (Knob or Cards — a scrolling list of worktree cards),
+**Hide inactive** (worktrees without agents; on by default), bridge status, a picker for the "needs you"
+haptic, haptic tests, and **Keep watching** — a mindfulness extended runtime session that keeps Apex awake with
+the wrist down for up to an hour, so it can still buzz. watchOS mutes an app's haptics with the wrist down:
+without Keep watching, an event that came then buzzes once on the wrist raise ("missed · …"), and ntfy is the
+wrist-down beacon.
+
+On each launch Apex writes two lines to the bridge trail (`Apex 0.3 online · …` and the knob's corner radii
+with the canvas size), so the Mac can tell the watch got through.
+
+Transport: **direct LAN** — the watch sends plain HTTP to `http://<Mac LAN IP>:7353`; with the iPhone
+nearby, watchOS proxies it through the iPhone (measured: p50 67–83 ms). The watch alone, without the iPhone,
+does not reach the bridge (a known watchOS failover issue). Details: `.work/notes/transport-probe.md`.
+
+```bash
+# 1. the bridge must expose its remote API on the LAN:  "interface": "lan" in ~/.config/orca-deck/bridge.json,
+#    then reload the bridge
+# 2. write the config (bridge URL + token, gitignored) and generate the Xcode project
+watch/configure.sh                 # or: watch/configure.sh http://<host>:7353
+# 3. build, install and launch without opening Xcode (first time: open the project once, Run, Always Allow)
+xcodebuild -project watch/Apex.xcodeproj -scheme Apex -destination 'generic/platform=watchOS' \
+  -allowProvisioningUpdates -derivedDataPath /tmp/apex-dd build
+xcrun devicectl device install app --device <watch UDID> /tmp/apex-dd/Build/Products/Debug-watchos/Apex.app
+xcrun devicectl device process launch --terminate-existing --device <watch UDID> com.floatrx.orcadeck.apex
+```
+
+`xcrun devicectl list devices` prints the watch UDID. A free Personal Team build expires after 7 days.
+The icon source is `watch/Icon/apex.svg`; `watch/Icon/render.sh` regenerates the PNG.
+
+The pure logic (protocol models, event cursor, beacon, selection, dial geometry) lives in the `watch/ApexCore`
+Swift package and is tested on macOS. The crown, swipes, taps and settings are tested with XCUITest on the
+watchOS simulator against the running bridge (`watch/configure.sh http://localhost:7353` first):
+
+```bash
+cd watch/ApexCore && swift test
+cd watch && TEST_RUNNER_APEX_SCRATCH_SESSION=<scratch chat session id> xcodebuild test -project Apex.xcodeproj \
+  -scheme Apex -destination 'platform=watchOS Simulator,name=<simulator>'
+```
+
+Launch arguments override a setting for one run: `-apex.layout cards`, `-apex.hideInactive NO`.
+
 ## ntfy
 
 1. Read the topic: `jq -r .ntfyTopic ~/.config/orca-deck/bridge.json`.
