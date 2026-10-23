@@ -59,7 +59,11 @@ final class AppModel: ObservableObject {
     /// Keep watching holds the app awake for an hour.
     /// Raising the wrist replays the beacon that came while it was down (haptics are silent then).
     var relaxed = false {
-        didSet { if oldValue && !relaxed { replayMissed() } }
+        didSet {
+            guard oldValue && !relaxed else { return }
+            if let caller { turnToCaller(caller) }
+            replayMissed()
+        }
     }
     /// Keep watching runs: haptics play with the wrist down too, so nothing waits for the wrist.
     var buzzesInBackground = false
@@ -71,6 +75,9 @@ final class AppModel: ObservableObject {
     private let client: BridgeClient
     /// The strongest beacon that came while the wrist was down, and its line for the banner.
     private var missed: (beacon: Beacon, line: String)?
+    /// The event that called while the wrist was down — a "needs you" beats a "done", else the latest: the
+    /// wrist raise turns the knob to its agent.
+    private var caller: BridgeEvent?
     /// The bridge's full list, before `hideInactive`.
     private var allWorktrees: [Worktree] = []
     private var cursor = EventCursor()
@@ -282,6 +289,7 @@ final class AppModel: ObservableObject {
             // The line names the event that set the beacon: an attention beats a later done.
             let lead = fresh.last(where: { $0.kind == .attention }) ?? fresh.last
             let line = lead.map { "\($0.worktree) · \($0.kind == .attention ? "needs you" : "done")" }
+            if relaxed, let lead, caller?.kind != .attention || lead.kind == .attention { caller = lead }
             if beacon != .none, let line {
                 if relaxed && !buzzesInBackground {
                     // watchOS drops haptics while the wrist is down: keep the strongest for the wrist raise.
@@ -314,6 +322,10 @@ final class AppModel: ObservableObject {
            let index = list.firstIndex(where: { $0.repo == wanted || $0.name == wanted }) {
             selectedId = list[index].id
         }
+        // At launch Apex opens on the agent calling the user; without one, on Orca's active worktree.
+        if selectedId == nil, DebugLaunch.selectRepo == nil, let calling = Selection.calling(in: list) {
+            selectedId = calling.worktreeId
+        }
         if let session = DebugLaunch.pickAgent, picked.isEmpty {
             for worktree in list {
                 if let agent = worktree.agents.first(where: { $0.id.hasPrefix("structured-agent-session-\(session):") }) {
@@ -332,6 +344,15 @@ final class AppModel: ObservableObject {
     }
 
     /// One line in the bridge trail per launch, so the Mac can tell the watch got through.
+    /// The wrist raise after an event: the knob turns to the agent that called and shows it, so one swipe
+    /// opens its message and Next.
+    private func turnToCaller(_ event: BridgeEvent) {
+        caller = nil
+        guard let index = worktrees.firstIndex(where: { $0.id == event.worktreeId }) else { return }
+        if worktrees[index].agents.contains(where: { $0.id == event.agentId }) { picked[event.worktreeId] = event.agentId }
+        select(index)
+    }
+
     private func replayMissed() {
         guard let missed else { return }
         self.missed = nil
@@ -345,7 +366,10 @@ final class AppModel: ObservableObject {
         greeted = true
         let device = WKInterfaceDevice.current()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let text = "Apex \(version) online · \(device.model) watchOS \(device.systemVersion) · \(worktrees.count) worktrees"
+        var text = "Apex \(version) online · \(device.model) watchOS \(device.systemVersion) · \(worktrees.count) worktrees"
+        if let expires = Signing.expiration {
+            text += " · signed until " + expires.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        }
         Task { try? await client.log(text) }
     }
 

@@ -9,6 +9,19 @@ public enum Selection {
         return min(max(previous, 0), worktrees.count - 1)
     }
 
+    /// The agent calling the user: the most recent one that needs them (bucket attention, latest `since`).
+    /// Apex opens on it — at launch, and on the wrist raise after a "needs you" came with the wrist down.
+    public static func calling(in worktrees: [Worktree]) -> (worktreeId: String, agentId: String)? {
+        var best: (worktreeId: String, agentId: String, since: Double)?
+        for worktree in worktrees {
+            for agent in worktree.agents where agent.bucket == .attention {
+                let since = agent.since ?? 0
+                if best == nil || since > best!.since { best = (worktree.id, agent.id, since) }
+            }
+        }
+        return best.map { ($0.worktreeId, $0.agentId) }
+    }
+
     /// The worktrees the watch shows: without the inactive ones (no agents at all) when `hideInactive`.
     public static func visible(_ worktrees: [Worktree], hideInactive: Bool) -> [Worktree] {
         hideInactive ? worktrees.filter { !$0.agents.isEmpty } : worktrees

@@ -132,16 +132,16 @@ does not reach the bridge (a known watchOS failover issue). Details: `.work/note
 ```bash
 # 1. the bridge must expose its remote API on the LAN:  "interface": "lan" in ~/.config/orca-deck/bridge.json,
 #    then reload the bridge
-# 2. write the config (bridge URL + token, gitignored) and generate the Xcode project
-watch/configure.sh                 # or: watch/configure.sh http://<host>:7353
-# 3. build, install and launch without opening Xcode (first time: open the project once, Run, Always Allow)
-xcodebuild -project watch/Apex.xcodeproj -scheme Apex -destination 'generic/platform=watchOS' \
-  -allowProvisioningUpdates -derivedDataPath /tmp/apex-dd build
-xcrun devicectl device install app --device <watch UDID> /tmp/apex-dd/Build/Products/Debug-watchos/Apex.app
-xcrun devicectl device process launch --terminate-existing --device <watch UDID> com.floatrx.orcadeck.apex
+# 2. configure, build, install and launch on the paired watch, then wait for its hello in the bridge trail
+#    (first time only: open watch/Apex.xcodeproj once, Run, Always Allow for the signing key)
+watch/install.sh                   # or: watch/install.sh http://<host>:7353
 ```
 
-`xcrun devicectl list devices` prints the watch UDID. A free Personal Team build expires after 7 days.
+A free Personal Team signs for **7 days**: run `watch/install.sh` again each week (it renews the profile).
+Settings and the hello line show "signed until …".
+
+Apex opens on the agent calling you — the latest one that needs you — and when a "needs you" came with the
+wrist down, the wrist raise turns the knob to it: one swipe left shows its message and Next.
 The icon source is `watch/Icon/apex.svg`; `watch/Icon/render.sh` regenerates the PNG.
 
 The pure logic (protocol models, event cursor, beacon, selection, dial geometry) lives in the `watch/ApexCore`

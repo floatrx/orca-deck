@@ -189,6 +189,25 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(Selection.index(of: "a", previous: 3, in: []), 0)
     }
 
+    private func worktree(_ id: String, agents: [(id: String, bucket: String, since: Double)]) throws -> Worktree {
+        let list = agents.map { #"{"id":"\#($0.id)","bucket":"\#($0.bucket)","since":\#($0.since)}"# }.joined(separator: ",")
+        return try JSONDecoder().decode(Worktree.self, from: Data(#"{"id":"\#(id)","name":"\#(id)","active":false,"agents":[\#(list)]}"#.utf8))
+    }
+
+    func testTheCallingAgentIsTheLatestThatNeedsYou() throws {
+        let list = [try worktree("a", agents: [("a1", "attention", 100), ("a2", "working", 900)]),
+                    try worktree("b", agents: [("b1", "done", 500)]),
+                    try worktree("c", agents: [("c1", "attention", 300)])]
+        let calling = try XCTUnwrap(Selection.calling(in: list))
+        XCTAssertEqual(calling.worktreeId, "c")
+        XCTAssertEqual(calling.agentId, "c1")
+    }
+
+    func testNobodyCallsWithoutAnAgentThatNeedsYou() throws {
+        XCTAssertNil(Selection.calling(in: [try worktree("a", agents: [("a1", "done", 100), ("a2", "working", 200)])]))
+        XCTAssertNil(Selection.calling(in: []))
+    }
+
     func testHidingInactiveDropsTheWorktreesWithoutAgents() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "state", withExtension: "json", subdirectory: "Fixtures"))
         let all = try StateResponse.decode(Data(contentsOf: url)).worktrees

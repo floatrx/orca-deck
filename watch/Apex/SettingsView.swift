@@ -77,6 +77,16 @@ struct SettingsView: View {
                 Text("Apex \(version) · protocol v\(ProtocolVersion.supported)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if let expires = Signing.expiration {
+                    LabeledContent("Signed until") {
+                        Text(expires, format: .dateTime.day().month(.abbreviated).hour().minute())
+                    }
+                    .font(.footnote)
+                }
+            } footer: {
+                if Signing.expiration != nil {
+                    Text("A free developer account signs for 7 days: reinstall with watch/install.sh before then.")
+                }
             }
         }
         .ignoresSafeArea(.container, edges: .top)
