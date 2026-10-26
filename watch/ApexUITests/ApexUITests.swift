@@ -176,4 +176,33 @@ final class ApexUITests: XCTestCase {
         app.swipeLeft()
         XCTAssertTrue(app.buttons["knob-centre"].waitForExistence(timeout: 5), "back to the knob")
     }
+
+    /// Questions: Undo within 3 s answers nothing (the runner checks the trail has no `answer`). Needs the scratch
+    /// session to have a pending question. Named so it runs before the test that answers.
+    func testAnswerUndoWithinThreeSecondsAnswersNothing() throws {
+        let session = try session("APEX_QUESTION_SESSION")
+        let app = launch(["-apexPage", "1", "-apexSelectRepo", "orca-deck", "-apexPickAgent", session])
+        let options = app.buttons.matching(identifier: "answer-option")
+        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 20), "the question's options")
+        XCTAssertFalse(app.buttons["send-button"].exists, "no Send while a question is pending")
+        options.element(boundBy: 0).tap()
+        let undo = app.buttons["undo-button"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3), "the answer countdown")
+        undo.tap()
+        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 3), "Undo brings the options back")
+        Thread.sleep(forTimeInterval: 5)  // well past the 3 s window
+        XCTAssertTrue(options.firstMatch.exists, "still not answered")
+    }
+
+    /// Questions: a tap on an option answers the scratch session's question once the countdown runs out.
+    func testAnswerWithAnOptionTap() throws {
+        let session = try session("APEX_QUESTION_SESSION")
+        let app = launch(["-apexPage", "1", "-apexSelectRepo", "orca-deck", "-apexPickAgent", session])
+        let options = app.buttons.matching(identifier: "answer-option")
+        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 20), "the question's options")
+        options.element(boundBy: 1).tap()
+        let question = app.descendants(matching: .any)["agent-question"]
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: question)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 25), .completed, "the question is answered and leaves the page")
+    }
 }

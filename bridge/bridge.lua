@@ -4,6 +4,7 @@
 ---
 --- Grown from a snapshot of the spike bridge (owned by another session; never edit the original):
 ---   /Users/floatrx/orca/workspaces/generic/nursehound/spike/orca-deck/  copied 2026-10-22 22:31
+---   (that worktree was deleted 2026-10-26; the spike now lives in ../.work/spike/orca-deck/, local only)
 ---   bridge.lua 68695f02…  index.html 70460db1… (sha256); reveal.cjs re-copied 23:05 (85cb8874…) and
 ---   go() ported from the spike's bridge.lua dbecf6b8… (runtime RPCs instead of the Cmd+1…9 search)
 ---
@@ -69,6 +70,27 @@ end
 
 local function nowMs() return math.floor(hs.timer.secondsSinceEpoch() * 1000) end
 
+local LAN_REFRESH_SECONDS = 10
+
+--- Re-reads the Mac's LAN addresses at most every LAN_REFRESH_SECONDS. Only when the remote API listens on the
+--- LAN ("interface": "lan"): otherwise no LAN client can use them.
+local function refreshLanURLs()
+  if not deckBridge.lan or hs.timer.secondsSinceEpoch() - deckBridge.lanAt < LAN_REFRESH_SECONDS then return end
+  deckBridge.lanAt = hs.timer.secondsSinceEpoch()
+  local interfaces = {}
+  for _, name in ipairs(hs.network.interfaces() or {}) do interfaces[name] = hs.network.addresses(name) or {} end
+  local urls = core.lanURLs(interfaces, hs.network.primaryInterfaces(), REMOTE_PORT)
+  if table.concat(urls, " ") ~= table.concat(deckBridge.lanURLs, " ") then
+    if #deckBridge.lanURLs > 0 or #urls > 0 then trail("lan → " .. (#urls > 0 and table.concat(urls, " ") or "none")) end
+    deckBridge.lanURLs = urls
+  end
+end
+
+--- The state's `lan` field: nil when empty — an empty Lua table could encode as {} and break a client's decode.
+local function lanField()
+  return #deckBridge.lanURLs > 0 and deckBridge.lanURLs or nil
+end
+
 if orcaDeck and orcaDeck.server then
   hs.alert.show("orca-deck: the spike bridge runs on 7351 — stop it first", 4)
   return "refused: the spike bridge (global orcaDeck, port 7351) is running. Stop it first: hs -c 'orcaDeck.stop()'"
@@ -122,7 +144,7 @@ deckBridge = {
   again = false,
   timers = {},
   tasks = {},
-  --- agentId → {message, at, since}: the full last message from agent.cjs history.
+  --- agentId → {message, question, at, since}: the full last message and the pending question from agent.cjs.
   details = {},
   --- agentId → true while a history fetch runs.
   fetching = {},
@@ -130,6 +152,12 @@ deckBridge = {
   failedAt = {},
   --- agentId → {at, ok, note}: the last say for that agent; ok is nil while it is sending.
   sends = {},
+  --- agentId → {at, ok, note}: the last answer to that agent's question; ok is nil while it runs.
+  answers = {},
+  --- The Mac's current LAN URLs for the remote API (core.lanURLs), refreshed every LAN_REFRESH_SECONDS; the
+  --- state carries them so the watch learns a new network's address by itself.
+  lanURLs = {},
+  lanAt = 0,
   --- agentId → Orca's lastAssistantMessage (cut at 200 characters) — the fallback message.
   rawLast = {},
 }
@@ -197,7 +225,9 @@ local function poll()
       end
       deckBridge.worktrees = worktrees
       for _, event in ipairs(fresh) do announce(deckBridge.events:add(event, nowMs())) end
-      local payload = hs.json.encode({ type = "state", v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = worktrees })
+      refreshLanURLs()
+      local payload = hs.json.encode({ type = "state", v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = worktrees,
+        lan = lanField() })
       if payload ~= deckBridge.payload then
         deckBridge.payload = payload
         if deckBridge.server then deckBridge.server:send(payload) end
@@ -315,7 +345,8 @@ local function refreshDetail(agent, sessionId)
     deckBridge.fetching[agent.id] = nil
     if result then
       deckBridge.failedAt[agent.id] = nil
-      deckBridge.details[agent.id] = { message = result.message, at = hs.timer.secondsSinceEpoch(), since = agent.since }
+      deckBridge.details[agent.id] = { message = result.message, question = core.questionOf(result.question),
+        at = hs.timer.secondsSinceEpoch(), since = agent.since }
     else
       deckBridge.failedAt[agent.id] = hs.timer.secondsSinceEpoch()
       trail("history " .. sessionId .. " failed: " .. tostring(problem))
@@ -324,7 +355,8 @@ local function refreshDetail(agent, sessionId)
 end
 
 --- GET /api/agent: the agent, its full last message (or Orca's 200-character cut while the full one is
---- fetched) without the trailing Next lines, the pending Next variants, and the last say's outcome.
+--- fetched) without the trailing Next lines, the pending Next variants, the pending question, and the last
+--- say's and answer's outcomes.
 local function agentDetail(id)
   local agent, worktree = core.agentById(deckBridge.worktrees, id)
   if not agent then return nil end
@@ -350,7 +382,10 @@ local function agentDetail(id)
     -- A terminal agent has no history to fetch: its 200-character cut is all there is.
     full = fresh == true or sessionId == nil,
     next = sessionId and core.parseVariants(readFile(PENDING_DIR .. sessionId)) or {},
+    -- The question the agent waits on (an AskUserQuestion); while it is pending, the Next variants are stale.
+    question = cached and cached.since == agent.since and cached.question or nil,
     send = deckBridge.sends[id],
+    answer = deckBridge.answers[id],
   }
 end
 
@@ -385,6 +420,36 @@ local function say(message)
   return nil
 end
 
+--- Answers the agent's pending question with one option (agent.cjs answer → agentSession.respondToQuestion).
+--- Returns a problem, or nil when the answer started; the outcome lands in deckBridge.answers and GET /api/agent.
+--- The trail names the session only: never the question or the option.
+local function answer(message)
+  local problem = core.answerProblem(message)
+  if problem then return problem end
+  local agent = core.agentById(deckBridge.worktrees, message.id)
+  if not agent then return "unknown agent" end
+  local sessionId = core.sessionIdOf(agent.id)
+  if not sessionId then return "only chat agents ask questions" end
+  if not hs.application.get(ORCA_BUNDLE) then return "Orca is not running" end
+  local started = hs.timer.secondsSinceEpoch()
+  deckBridge.answers[agent.id] = { at = math.floor(started * 1000), note = "answering" }
+  local input = hs.json.encode({ itemId = message.itemId, revision = math.floor(message.revision), optionId = message.optionId })
+  agentScript({ "answer", sessionId }, input, function(result, failure)
+    local at = math.floor(hs.timer.secondsSinceEpoch() * 1000)
+    local ms = math.floor((hs.timer.secondsSinceEpoch() - started) * 1000)
+    if result and result.answered then
+      deckBridge.answers[agent.id] = { at = at, ok = true }
+      deckBridge.details[agent.id] = nil  -- the answered question must not linger in GET /api/agent
+      trail(string.format("answer %s → answered in %d ms", sessionId, ms))
+      later(REPOLL_SECONDS, poll)
+    else
+      deckBridge.answers[agent.id] = { at = at, ok = false, note = tostring(failure) }
+      trail(string.format("answer %s → failed in %d ms: %s", sessionId, ms, tostring(failure)))
+    end
+  end)
+  return nil
+end
+
 local function ack(cmd, problem, note)
   return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem or note }
 end
@@ -410,6 +475,9 @@ local function run(message, via)
   elseif cmd == "say" then
     local problem = say(message)
     return ack(cmd, problem, problem == nil and "sending" or nil)
+  elseif cmd == "answer" then
+    local problem = answer(message)
+    return ack(cmd, problem, problem == nil and "answering" or nil)
   elseif cmd == "send" then
     return ack(cmd, press({ mods = {}, key = "return" }))
   end
@@ -420,7 +488,7 @@ end
 local function stateMessage(since)
   if since == nil then return deckBridge.payload or hs.json.encode({ type = "state", v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = {} }) end
   return hs.json.encode({ type = "state", v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = deckBridge.worktrees,
-    events = deckBridge.events:after(since) })
+    events = deckBridge.events:after(since), lan = lanField() })
 end
 
 local function onMessage(raw)
@@ -446,7 +514,7 @@ local function onApi(method, route, query, headers, body)
     return json(200, { v = core.PROTOCOL, ok = true, at = nowMs() })
   elseif method == "GET" and route == "/api/state" then
     return json(200, { v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = deckBridge.worktrees,
-      events = deckBridge.events:after(query.since) })
+      events = deckBridge.events:after(query.since), lan = lanField() })
   elseif method == "POST" and route == "/api/cmd" then
     local ok, message = pcall(hs.json.decode, body or "")
     if not ok or type(message) ~= "table" or type(message.cmd) ~= "string" or message.cmd == "hello" then

@@ -1,11 +1,16 @@
 #!/bin/sh
-# Prepares Apex: writes Apex/Config.generated.swift (bridge URL + token, gitignored) and generates
+# Prepares Apex: writes Apex/Config.generated.swift (the bridge routes + token, gitignored) and generates
 # Apex.xcodeproj with XcodeGen.
 #
-#   watch/configure.sh [bridge-base-url]
+#   watch/configure.sh              # every route: LAN IP, tunnel (if configured)
+#   watch/configure.sh <url> [url…]  # only these routes — e.g. http://localhost:7353 for the simulator
 #
-# bridge-base-url defaults to http://<en0 IP>:7353 — the bridge's remote API port (protocol.md).
-# The bridge must run with "interface": "lan" in ~/.config/orca-deck/bridge.json for the watch to reach it.
+# Routes, fastest first (the watch walks them on failure — ApexCore Routes):
+#   1. http://<en0 IP>:7353 — the Mac on today's LAN (the watch does not resolve .local names, measured)
+#   2. "tunnelURL" in ~/.config/orca-deck/bridge.json — the named Cloudflare tunnel, from anywhere
+# On another network the watch reaches the bridge through the tunnel, learns the Mac's new LAN address from
+# GET /api/state (`lan`) and goes back to the LAN by itself — no reinstall.
+# The bridge must run with "interface": "lan" in ~/.config/orca-deck/bridge.json for the LAN routes.
 set -eu
 
 DIR=$(cd "$(dirname "$0")" && pwd)
@@ -13,12 +18,18 @@ CONFIG="$HOME/.config/orca-deck/bridge.json"
 
 [ -f "$CONFIG" ] || { echo "no $CONFIG — load the bridge once first" >&2; exit 1; }
 TOKEN=$(jq -r .token "$CONFIG")
-BASE="${1:-}"
-if [ -z "$BASE" ]; then
+ROUTES=""
+add() { ROUTES="$ROUTES        \"${1%/}\",
+"; }
+if [ $# -gt 0 ]; then
+  for url in "$@"; do add "$url"; done
+else
   LAN_IP=$(ipconfig getifaddr en0 || true)
-  [ -n "$LAN_IP" ] || { echo "en0 has no IP address — pass the bridge URL" >&2; exit 1; }
-  BASE="http://$LAN_IP:7353"
+  [ -n "$LAN_IP" ] && add "http://$LAN_IP:7353"
+  TUNNEL=$(jq -r '.tunnelURL // empty' "$CONFIG")
+  [ -n "$TUNNEL" ] && add "$TUNNEL"
 fi
+[ -n "$ROUTES" ] || { echo "no route to the bridge — pass its URL" >&2; exit 1; }
 [ "$(jq -r .interface "$CONFIG")" = "lan" ] || echo "warning: the bridge config has interface != lan — the watch cannot reach port 7353"
 
 cat > "$DIR/Apex/Config.generated.swift" <<EOF
@@ -26,11 +37,14 @@ cat > "$DIR/Apex/Config.generated.swift" <<EOF
 import Foundation
 
 enum Config {
-    static let baseURL = URL(string: "${BASE%/}")!
+    /// The ways to the bridge, fastest first (ApexCore Routes walks them).
+    static let routes: [URL] = [
+$ROUTES    ].compactMap(URL.init(string:))
     static let token = "$TOKEN"
 }
 EOF
-echo "wrote Apex/Config.generated.swift (bridge ${BASE%/})"
+echo "wrote Apex/Config.generated.swift — routes:"
+printf '%s' "$ROUTES" | sed 's/[",]//g; s/^ */  /'
 
 # The team ID: $DEVELOPMENT_TEAM if set, else the first team Xcode lists under Settings → Apple Accounts.
 TEAM="${DEVELOPMENT_TEAM:-}"

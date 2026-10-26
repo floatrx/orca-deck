@@ -208,11 +208,87 @@ function core.sayProblem(message)
 end
 
 --- Why `cmd` may not run over the transport `via` ("ws" or "http <addr>"), or nil when it may.
---- `say` types into a Claude session that runs with bypassed permissions, so it needs the bearer token:
---- any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
+--- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
+--- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if cmd == "say" and via == "ws" then return "say needs the bearer token: use POST /api/cmd" end
+  if (cmd == "say" or cmd == "answer") and via == "ws" then
+    return cmd .. " needs the bearer token: use POST /api/cmd"
+  end
   return nil
+end
+
+--- Longest id Orca takes for an item or an option (AGENT_SESSION_RESPONSE_OPTION_ID_MAX_LENGTH).
+local ID_MAX = 1024
+core.QUESTION_OPTIONS_MAX = 6
+local QUESTION_TEXT_MAX = 1500
+local OPTION_LABEL_MAX = 120
+
+local function isId(value)
+  return type(value) == "string" and value ~= "" and #value <= ID_MAX
+end
+
+--- Why an answer command cannot run, or nil when it can.
+function core.answerProblem(message)
+  if not isId(message.id) then return "answer needs an agent id" end
+  if not isId(message.itemId) then return "answer needs the question's item id" end
+  local revision = message.revision
+  if type(revision) ~= "number" or revision < 1 or revision ~= math.floor(revision) then
+    return "answer needs the question's revision"
+  end
+  if not isId(message.optionId) then return "answer needs an option id" end
+  return nil
+end
+
+--- The pending question agent.cjs read, checked and clipped for GET /api/agent; nil when there is none or it
+--- is malformed. A question without options cannot be answered with a tap.
+function core.questionOf(raw)
+  if type(raw) ~= "table" or not isId(raw.itemId) or type(raw.revision) ~= "number" then return nil end
+  local options = {}
+  for _, option in ipairs(type(raw.options) == "table" and raw.options or {}) do
+    if #options >= core.QUESTION_OPTIONS_MAX then break end
+    if type(option) == "table" and isId(option.id) then
+      options[#options + 1] = { id = option.id, label = core.clip(option.label, OPTION_LABEL_MAX) }
+    end
+  end
+  return {
+    itemId = raw.itemId,
+    revision = raw.revision,
+    text = core.clip(raw.text, QUESTION_TEXT_MAX),
+    header = type(raw.header) == "string" and core.clip(raw.header, 40) or nil,
+    options = options,
+    answerable = raw.answerable == true and #options > 0,
+  }
+end
+
+--- A private IPv4 address (10/8, 172.16/12, 192.168/16) — one a client on the same network can reach.
+local function isPrivateIPv4(address)
+  local a, b = address:match("^(%d+)%.(%d+)%.%d+%.%d+$")
+  a, b = tonumber(a), tonumber(b)
+  if not a then return false end
+  return a == 10 or (a == 172 and b >= 16 and b <= 31) or (a == 192 and b == 168)
+end
+
+--- The URLs a LAN client can reach the remote API on (`port`): the Mac's private IPv4 addresses on Ethernet and
+--- Wi-Fi (en*) interfaces, the `primary` interface first. `interfaces` maps a name to its addresses, as
+--- hs.network reports them; VPN tunnels, loopback, link-local and IPv6 are skipped. The watch learns the first
+--- one from GET /api/state, so a new network needs no reinstall (protocol.md § Remote access).
+function core.lanURLs(interfaces, primary, port)
+  local names = {}
+  for name in pairs(interfaces or {}) do
+    if name:match("^en%d+$") then names[#names + 1] = name end
+  end
+  table.sort(names, function(a, b)
+    if a == primary then return true end
+    if b == primary then return false end
+    return a < b
+  end)
+  local urls = {}
+  for _, name in ipairs(names) do
+    for _, address in ipairs(interfaces[name]) do
+      if isPrivateIPv4(address) then urls[#urls + 1] = string.format("http://%s:%d", address, port) end
+    end
+  end
+  return urls
 end
 
 --- The agent with `id` and its worktree, or nil.

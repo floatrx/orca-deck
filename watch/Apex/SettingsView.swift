@@ -38,7 +38,8 @@ struct SettingsView: View {
             }
             Section("Bridge") {
                 LabeledContent("Status", value: model.connectionLabel)
-                LabeledContent("Mac", value: Config.baseURL.host ?? Config.baseURL.absoluteString)
+                LabeledContent("Route", value: model.route.isEmpty ? "—" : model.route)
+                LabeledContent("Mac", value: model.routeHost.isEmpty ? "—" : model.routeHost)
                 if let updated = model.updated {
                     LabeledContent("Updated") {
                         Text(updated, style: .relative)

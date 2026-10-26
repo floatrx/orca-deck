@@ -82,7 +82,7 @@ bridge/test/run.sh
 
 ### The spike bridge and this bridge — never both at once
 
-This bridge grew from a throwaway spike (`…/nursehound/spike/orca-deck/bridge.lua`, port 7351, global
+This bridge grew from a throwaway spike (`.work/spike/orca-deck/bridge.lua`, local only, port 7351, global
 `orcaDeck`). Both press keys in Orca, so **only one may run**. This bridge refuses to start while the
 spike's server runs. To switch:
 
@@ -109,6 +109,11 @@ pinned at the bottom — the user's own `Next:` suggestions (from the Stop hook'
 3 s with an Undo, then delivers the prompt through Orca's own `agentSession.send` (`bridge/agent.cjs`): no key
 presses, Orca's focus stays put. See `protocol.md` § Agent screen.
 
+When the agent **asks a question** (an AskUserQuestion with options), the agent page shows the question and one
+button per option instead of the Next card: a tap counts down 3 s (Undo), then answers it through Orca's own
+`agentSession.respondToQuestion` — Orca shows it answered and the agent continues. The stale Next and Send are
+hidden while the question waits. Multi-select, several questions or free text: "Answer in Orca".
+
 The app is alive: the background glows in the agent's colour, a comet runs the track while it works, sonar
 rings leave the chosen dot while it needs you. Every motion follows the track: a crown step slides the dots
 along it frame by frame (`Dial.slide`), never in a straight line. There is no system clock — the whole display
@@ -125,9 +130,15 @@ wrist-down beacon.
 On each launch Apex writes two lines to the bridge trail (`Apex 0.3 online · …` and the knob's corner radii
 with the canvas size), so the Mac can tell the watch got through.
 
-Transport: **direct LAN** — the watch sends plain HTTP to `http://<Mac LAN IP>:7353`; with the iPhone
-nearby, watchOS proxies it through the iPhone (measured: p50 67–83 ms). The watch alone, without the iPhone,
-does not reach the bridge (a known watchOS failover issue). Details: `.work/notes/transport-probe.md`.
+Transport: **routes, fastest first** — the Mac's LAN IP (`http://<Mac LAN IP>:7353`; with the iPhone nearby,
+watchOS proxies it through the iPhone, p50 67–83 ms), then a **named Cloudflare tunnel** (`tunnelURL` in
+`~/.config/orca-deck/bridge.json`, e.g. `https://apex.<your-domain>`, ~190 ms) that works from any network and over
+mobile data. A network failure moves Apex to the next route; it tries the LAN again every minute (ApexCore
+`Routes`). Settings shows the route; the trail logs `route → …`. The tunnel exposes only `/api/*` (bearer token)
+— see `~/.cloudflared/config.yml` and the LaunchAgent `com.floatrx.apex-tunnel`. The watch does not resolve the
+Mac's `.local` name through the iPhone; instead the bridge advertises its current LAN address in every state
+(`lan`), and the watch remembers it: on a new network the first request goes through the tunnel and the next ones
+through the new LAN address — no reinstall.
 
 ```bash
 # 1. the bridge must expose its remote API on the LAN:  "interface": "lan" in ~/.config/orca-deck/bridge.json,

@@ -45,6 +45,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var banner: String?
     /// When the last poll succeeded.
     @Published private(set) var updated: Date?
+    /// The route the bridge answers through — "LAN" or "tunnel" (Routes.label) — and its host.
+    @Published private(set) var route = ""
+    @Published private(set) var routeHost = ""
     /// Grows by one per batch of events — the knob shakes on each change.
     @Published private(set) var pulse = 0
     /// worktreeId → the agent picked with a long press; otherwise the knob shows the lead.
@@ -54,6 +57,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var sendState: SendState = .idle
     /// The agent the current send belongs to — captured when Send was tapped.
     @Published private(set) var sendAgentId: String?
+    /// What the countdown delivers: a prompt (Send) or an answer to the agent's question (an option tap).
+    enum Delivery: Equatable { case say, answer }
+    @Published private(set) var delivery: Delivery = .say
 
     /// Poll less often while the app is not frontmost-active (wrist down): saves the battery when
     /// Keep watching holds the app awake for an hour.
@@ -182,10 +188,25 @@ final class AppModel: ObservableObject {
     /// Send: count down `undoSeconds`, then send `text` to the shown agent — the agent captured now, even if
     /// the user turns away. Undo, or turning to another agent, cancels the countdown.
     func send(_ text: String) {
-        guard let agent = shownAgent, sendTask == nil else { return }
+        guard let agent = shownAgent else { return }
+        deliver(text, as: .say, to: agent, previous: detail?.id == agent.id ? detail?.send?.at : nil,
+                command: .say(agent.id, text))
+    }
+
+    /// An option tap: the same countdown, then answer the shown agent's question with that option.
+    func answer(_ option: AgentQuestion.Option, to question: AgentQuestion) {
+        guard let agent = shownAgent else { return }
+        deliver(option.label, as: .answer, to: agent, previous: detail?.id == agent.id ? detail?.answer?.at : nil,
+                command: .answer(agent.id, question, option: option))
+    }
+
+    /// The countdown, then `command`; `text` is what the card shows while it runs. The bridge's record of the
+    /// delivery (`send` or `answer` in AgentDetail) settles it (checkSend).
+    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command) {
+        guard sendTask == nil else { return }
         if case .sending = sendState { return }
         sendAgentId = agent.id
-        let previous = detail?.id == agent.id ? detail?.send?.at : nil
+        delivery = kind
         sendTask = Task {
             for remaining in stride(from: Self.undoSeconds, to: 0, by: -1) {
                 sendState = .countdown(text: text, seconds: remaining)
@@ -194,7 +215,7 @@ final class AppModel: ObservableObject {
             }
             sendState = .sending(text: text, previous: previous, startedAt: Date())
             do {
-                let ack = try await client.send(.say(agent.id, text))
+                let ack = try await client.send(command)
                 if !ack.ok { settle(ok: false, note: ack.note ?? "refused") }
             } catch {
                 settle(ok: false, note: error.localizedDescription)
@@ -224,10 +245,10 @@ final class AppModel: ObservableObject {
         }
         guard sendTask == nil, let fetched = try? await client.agent(id: id) else { return }
         guard case .sending = sendState else { return }
-        if let send = fetched.send {
-            if let ok = send.ok, send.at != previous { settle(ok: ok, note: send.note) }
+        if let outcome = delivery == .answer ? fetched.answer : fetched.send {
+            if let ok = outcome.ok, outcome.at != previous { settle(ok: ok, note: outcome.note) }
         } else {
-            settle(ok: false, note: "the bridge lost the send — check the agent")
+            settle(ok: false, note: "the bridge lost the \(delivery == .answer ? "answer" : "send") — check the agent")
         }
         if fetched.id == shownAgent?.id, fetched != detail { detail = fetched }
     }
@@ -237,7 +258,8 @@ final class AppModel: ObservableObject {
         if ok { WKInterfaceDevice.current().play(.success) } else { Haptics.failure() }
         if sendAgentId != shownAgent?.id,
            let worktree = worktrees.first(where: { $0.agents.contains { $0.id == sendAgentId } }) {
-            show("\(worktree.name) · \(ok ? "sent" : (note ?? "send failed"))")
+            let done = delivery == .answer ? "answered" : "sent"
+            show("\(worktree.name) · \(ok ? done : (note ?? "\(delivery == .answer ? "answer" : "send") failed"))")
         }
     }
 
@@ -249,9 +271,16 @@ final class AppModel: ObservableObject {
         detailFetchedAt = Date()
         guard let fetched = try? await client.agent(id: agent.id), fetched.id == shownAgent?.id else { return }
         if fetched != detail { detail = fetched }
-        if DebugLaunch.demo == "countdown", sendState == .idle, let first = fetched.next.first {
-            sendAgentId = fetched.id
-            sendState = .countdown(text: first, seconds: Self.undoSeconds)
+        if DebugLaunch.demo == "countdown", sendState == .idle {
+            // A pending question counts down an answer; else the first Next.
+            if let option = fetched.question?.options.first {
+                sendAgentId = fetched.id
+                delivery = .answer
+                sendState = .countdown(text: option.label, seconds: Self.undoSeconds)
+            } else if let first = fetched.next.first {
+                sendAgentId = fetched.id
+                sendState = .countdown(text: first, seconds: Self.undoSeconds)
+            }
         }
         // DEBUG end-to-end test: only for the exact session given by -apexPickAgent.
         if DebugLaunch.demo == "send", !demoSent, let session = DebugLaunch.pickAgent,
@@ -301,6 +330,7 @@ final class AppModel: ObservableObject {
             }
             if let line { show(line) }
             connection = .online
+            noteRoute()
             updated = Date()
             greet()
             return true
@@ -361,12 +391,25 @@ final class AppModel: ObservableObject {
         show("missed · " + missed.line)
     }
 
+    /// Publishes the route the last request took; a change after the first goes to the trail, through the new
+    /// route — so the Mac sees the watch move between the LAN and the tunnel.
+    private func noteRoute() {
+        let url = client.currentURL
+        let label = Routes.label(url)
+        let host = url.host ?? url.absoluteString
+        guard label != route || host != routeHost else { return }
+        let first = route.isEmpty
+        route = label
+        routeHost = host
+        if !first { report("route → \(label) (\(host))") }
+    }
+
     private func greet() {
         guard !greeted else { return }
         greeted = true
         let device = WKInterfaceDevice.current()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        var text = "Apex \(version) online · \(device.model) watchOS \(device.systemVersion) · \(worktrees.count) worktrees"
+        var text = "Apex \(version) online · \(device.model) watchOS \(device.systemVersion) · \(worktrees.count) worktrees · via \(route) \(routeHost)"
         if let expires = Signing.expiration {
             text += " · signed until " + expires.formatted(.dateTime.day().month(.abbreviated).hour().minute())
         }

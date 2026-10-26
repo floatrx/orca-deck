@@ -29,20 +29,21 @@ struct AgentView: View {
             if let worktree = model.selectedWorktree, let agent = model.shownAgent {
                 VStack(spacing: 5) {
                     header(worktree, agent)
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            messageCard(worktree, agent)
-                            Button {
-                                model.focusSelected()
-                            } label: {
-                                Label("Show in Orca", systemImage: "macwindow")
+                    if let question = pendingQuestion(of: agent) {
+                        // The agent waits on a question: answering it is the page's goal, and the Next variants
+                        // belong to the previous turn — no Next card, no Send.
+                        questionPage(question, agent)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                messageCard(worktree, agent)
+                                showInOrca
                             }
-                            .buttonStyle(Capsule40(fill: Color.white.opacity(0.14), foreground: Theme.ink))
                         }
+                        .focused($focused)
+                        .accessibilityIdentifier("agent-page")
+                        nextCard(agent)
                     }
-                    .focused($focused)
-                    .accessibilityIdentifier("agent-page")
-                    nextCard(agent)
                 }
                 .padding(.horizontal, 2)
                 // Edge to edge: the header takes the clock's place at the top, and the Next card hugs the
@@ -61,9 +62,105 @@ struct AgentView: View {
         .onAppear { focused = active }
     }
 
+    /// The Next variants — none while a question is pending: they belong to the previous turn.
     private var variants: [String] {
-        guard let detail = model.detail, detail.id == model.shownAgent?.id else { return [] }
+        guard let detail = model.detail, detail.id == model.shownAgent?.id, detail.question == nil else { return [] }
         return detail.next
+    }
+
+    /// The question the shown agent waits on, from its detail.
+    private func pendingQuestion(of agent: Agent) -> AgentQuestion? {
+        guard let detail = model.detail, detail.id == agent.id else { return nil }
+        return detail.question
+    }
+
+    private var showInOrca: some View {
+        Button {
+            model.focusSelected()
+        } label: {
+            Label("Show in Orca", systemImage: "macwindow")
+        }
+        .buttonStyle(Capsule40(fill: Color.white.opacity(0.14), foreground: Theme.ink))
+    }
+
+    /// The question and one button per option; a tap counts down an answer (Undo, like Send). While the answer
+    /// counts down or runs, the chosen option replaces the list and the control is pinned at the bottom.
+    private func questionPage(_ question: AgentQuestion, _ agent: Agent) -> some View {
+        let state = sendState(for: agent)
+        let chosen: String? = {
+            switch state {
+            case .countdown(let text, _), .sending(let text, _, _): return text
+            default: return nil
+            }
+        }()
+        return VStack(spacing: 5) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    questionCard(question)
+                    if let chosen {
+                        Label(chosen, systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.attention)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8)
+                            .transition(.opacity)
+                    } else if question.answerable {
+                        ForEach(question.options) { option in
+                            Button {
+                                model.answer(option, to: question)
+                            } label: {
+                                Text(option.label)
+                            }
+                            .buttonStyle(OptionStyle())
+                            .accessibilityIdentifier("answer-option")
+                        }
+                    } else {
+                        // Not one tap (multi-select, several questions, free text): the choices, read-only.
+                        ForEach(question.options) { option in
+                            Text("· " + option.label)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.detail)
+                                .lineLimit(2)
+                                .padding(.horizontal, 8)
+                        }
+                        Label("Answer in Orca", systemImage: "macwindow")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.muted)
+                            .padding(.horizontal, 8)
+                    }
+                    if case .failed(let note) = state {
+                        Text(note).font(.system(size: 11)).foregroundStyle(.red).lineLimit(3).padding(.horizontal, 8)
+                    }
+                    showInOrca
+                }
+                .animation(.easeInOut(duration: 0.25), value: chosen)
+            }
+            .focused($focused)
+            .accessibilityIdentifier("agent-page")
+            if chosen != nil {
+                pinnedCard { sendControl(text: chosen ?? "", state: state) }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: chosen)
+    }
+
+    private func questionCard(_ question: AgentQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(question.header ?? "Question", systemImage: "questionmark.bubble.fill")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.attention)
+                .lineLimit(1)
+            Text(question.text)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.ink)
+                .accessibilityIdentifier("agent-question")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.attention.opacity(0.14)))
     }
 
     /// One line pinned at the top, in the system clock's place: which agent this is, its state and age. The
@@ -185,16 +282,14 @@ struct AgentView: View {
                 outcome(state)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .padding(.bottom, max(0, cardBottomRadius - 26) / 2)
-        .background(
-            UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: cardBottomRadius,
-                                   bottomTrailingRadius: cardBottomRadius, topTrailingRadius: 12, style: .circular)
-                .fill(Theme.attention.opacity(0.12))
-        )
-        .modifier(ConcentricRadius(edge: .bottom, fallback: 32, radius: $cardBottomRadius))
+        .modifier(PinnedCardFrame(bottomRadius: $cardBottomRadius))
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: state)
+    }
+
+    /// A card pinned at the bottom of the page, its bottom corners concentric with the display's.
+    private func pinnedCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) { content() }
+            .modifier(PinnedCardFrame(bottomRadius: $cardBottomRadius))
     }
 
     /// The card without variants: the outcome of the last send (a sent variant leaves the list), else "No Next".
@@ -202,7 +297,7 @@ struct AgentView: View {
     private func outcome(_ state: AppModel.SendState) -> some View {
         switch state {
         case .sent:
-            Label("Sent", systemImage: "checkmark.circle.fill")
+            Label(model.delivery == .answer ? "Answered" : "Sent", systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.done)
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -222,7 +317,7 @@ struct AgentView: View {
             Button {
                 model.undoSend()
             } label: {
-                Text("Sending in \(seconds) · Undo")
+                Text("\(model.delivery == .answer ? "Answering" : "Sending") in \(seconds) · Undo")
                     .contentTransition(.numericText(countsDown: true))
             }
             .accessibilityIdentifier("undo-button")
@@ -232,13 +327,13 @@ struct AgentView: View {
         case .sending:
             HStack(spacing: 6) {
                 ProgressView().frame(width: 14, height: 14)
-                Text("Sending…").font(.system(size: 12)).foregroundStyle(Theme.muted)
+                Text(model.delivery == .answer ? "Answering…" : "Sending…").font(.system(size: 12)).foregroundStyle(Theme.muted)
             }
             .frame(maxWidth: .infinity, minHeight: 40)
         case .idle, .sent, .failed:
             VStack(spacing: 4) {
                 if state == .sent {
-                    Label("Sent", systemImage: "checkmark.circle.fill")
+                    Label(model.delivery == .answer ? "Answered" : "Sent", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.done)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -255,6 +350,44 @@ struct AgentView: View {
                 .accessibilityIdentifier("send-button")
             }
         }
+    }
+}
+
+/// The Next card's frame, shared by every card pinned at the bottom: padding, a tint, and bottom corners
+/// concentric with the display (ConcentricRadius).
+private struct PinnedCardFrame: ViewModifier {
+    @Binding var bottomRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .padding(.bottom, max(0, bottomRadius - 26) / 2)
+            .background(
+                UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: bottomRadius,
+                                       bottomTrailingRadius: bottomRadius, topTrailingRadius: 12, style: .circular)
+                    .fill(Theme.attention.opacity(0.12))
+            )
+            .modifier(ConcentricRadius(edge: .bottom, fallback: 32, radius: $bottomRadius))
+    }
+}
+
+/// An answer option: full width, at least 40 pt, two lines of label — a rounded card rather than a capsule,
+/// because option labels wrap.
+private struct OptionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.ink)
+            .multilineTextAlignment(.leading)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.attention.opacity(0.24)))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

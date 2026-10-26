@@ -20,6 +20,39 @@ final class AgentDetailTests: XCTestCase {
         XCTAssertNil(detail.chat)
     }
 
+    func testDecodesAPendingQuestionAndTheLastAnswer() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "agent-question", withExtension: "json", subdirectory: "Fixtures"))
+        let detail = try JSONDecoder().decode(AgentDetail.self, from: Data(contentsOf: url))
+        let question = try XCTUnwrap(detail.question)
+        XCTAssertEqual(question.text, "Which colour do you prefer?")
+        XCTAssertEqual(question.header, "Colour")
+        XCTAssertEqual(question.revision, 1)
+        XCTAssertEqual(question.options.map(\.label), ["red", "green"])
+        XCTAssertTrue(question.answerable)
+        XCTAssertEqual(detail.answer?.ok, true)
+        XCTAssertEqual(detail.bucket, .attention)
+    }
+
+    func testADetailWithoutAQuestionStillDecodes() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "agent", withExtension: "json", subdirectory: "Fixtures"))
+        let detail = try JSONDecoder().decode(AgentDetail.self, from: Data(contentsOf: url))
+        XCTAssertNil(detail.question)
+        XCTAssertNil(detail.answer)
+    }
+
+    func testAnswerCommandCarriesTheQuestionAndTheOption() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "agent-question", withExtension: "json", subdirectory: "Fixtures"))
+        let question = try XCTUnwrap(try JSONDecoder().decode(AgentDetail.self, from: Data(contentsOf: url)).question)
+        let command = Command.answer("a:1", question, option: question.options[1])
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(command)) as? [String: Any])
+        XCTAssertEqual(body["cmd"] as? String, "answer")
+        XCTAssertEqual(body["id"] as? String, "a:1")
+        XCTAssertEqual(body["itemId"] as? String, question.itemId)
+        XCTAssertEqual(body["revision"] as? Int, 1)
+        XCTAssertEqual(body["optionId"] as? String, "q1:choice-2")
+        XCTAssertNil(body["text"], "an answer carries no text")
+    }
+
     func testSayCommandCarriesTheAgentAndText() throws {
         let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Command.say("a:1", "hi"))) as? [String: String]
         XCTAssertEqual(body, ["cmd": "say", "id": "a:1", "text": "hi"])

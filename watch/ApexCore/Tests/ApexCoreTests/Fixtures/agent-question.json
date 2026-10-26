@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "id": "structured-agent-session-claude_scratch:leaf",
+  "worktreeId": "w1",
+  "worktree": "main",
+  "kind": "claude",
+  "chat": true,
+  "state": "blocked",
+  "bucket": "attention",
+  "since": 1792759624000,
+  "message": "Asking which colour.",
+  "full": true,
+  "next": ["a stale suggestion"],
+  "question": {
+    "itemId": "orca:claude-prompt%3Aclaude_scratch%3Aq",
+    "revision": 1,
+    "text": "Which colour do you prefer?",
+    "header": "Colour",
+    "options": [{"id": "q1:choice-1", "label": "red"}, {"id": "q1:choice-2", "label": "green"}],
+    "answerable": true
+  },
+  "answer": {"at": 1792759650064, "ok": true}
+}

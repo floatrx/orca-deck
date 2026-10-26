@@ -25,6 +25,16 @@ reached from outside the Mac: `interface: "lan"` in the config binds 7353 on eve
 tunnel (`cloudflared tunnel --url http://localhost:7353`) points at 7353. The WebSocket has no auth and
 presses keys, so it must never leave localhost.
 
+
+**Remote access (2026-10-23).** A named Cloudflare tunnel (`cloudflared tunnel run apex`, LaunchAgent
+`com.floatrx.apex-tunnel`) publishes the remote API as `https://<tunnelURL>` — ingress `^/api/` →
+`http://localhost:7353`, everything else 404. It is the same API with the same bearer token: the watch keeps it as
+its last route and falls back to it when the LAN routes fail (watch/ApexCore `Routes`).
+
+**Learned LAN.** `GET /api/state` (and the WebSocket state) carries `lan: ["http://192.168.2.109:7353", …]` — the
+Mac's private IPv4 addresses on en* interfaces, the primary first, refreshed every 10 s; absent when empty or when
+the API does not listen on the LAN. The watch remembers the first one and tries it before every other route, so
+after a move to another network it comes back from the tunnel to the LAN by itself.
 ## Shared shapes
 
 ### Worktree
@@ -159,6 +169,7 @@ Every `/api/*` request needs `Authorization: Bearer <token>`. Without it, or wit
 | `POST /api/cmd` with a body that is not a command | `400 {"error":"bad command"}` |
 | `GET /api/agent?id=<agent id>` | `AgentDetail` (below); `404 {"error":"unknown agent"}` |
 | `POST /api/cmd {cmd:"say", id:<agent id>, text}` | `Ack` with `note:"sending"` — the send runs in the background; its outcome appears as `send` in `AgentDetail` |
+| `POST /api/cmd {cmd:"answer", id, itemId, revision, optionId}` | `Ack` with `note:"answering"` — answers the agent's pending question in the background; the outcome appears as `answer` in `AgentDetail` |
 | `POST /api/log` body `{text}` | `{v:1, ok:true}` — appends `text` (≤ 4000 bytes) to the bridge trail. A diagnostic aid for clients without a console, such as the transport probe |
 | anything else under `/api/` | `404 {"error":"not found"}` |
 
@@ -188,8 +199,15 @@ Client loop:
   "message": "…",       // the full last assistant message, its trailing `Next: ` lines removed
   "full": true,         // false: `message` is still Orca's 200-character cut, the full one is being fetched
   "next": ["…", "…"],   // the pending Next variants (≤ 5); [] when none or already used
-  "send": { "at": 1792708619802, "ok": true, "note": "…" }   // the last say; absent before the first;
+  "question": {         // the question the agent waits on (an AskUserQuestion); absent when none
+    "itemId": "orca:claude-prompt%3A…", "revision": 1,
+    "text": "Which colour do you prefer?", "header": "Colour",      // header may be absent
+    "options": [{ "id": "q1:choice-1", "label": "red" }],             // ≤ 6, labels ≤ 120 characters
+    "answerable": true  // false: several questions, multi-select or free text only — answer it in Orca
+  },
+  "send": { "at": 1792708619802, "ok": true, "note": "…" },  // the last say; absent before the first;
                                                             // ok absent while it is still sending
+  "answer": { "at": 1792708619802, "ok": true, "note": "…" } // the last answer, like `send`
 }
 ```
 
@@ -199,6 +217,9 @@ Client loop:
 - `next` is read from `~/.claude/hooks/next-pending/<session id>`, the file the user's Stop hook writes
   per Orca chat session (`<session id>` is the part of the agent id between `structured-agent-session-`
   and `:`). Terminal agents have no such file: `next` is `[]`.
+- `question` is the newest history item of kind `question` that is still pending and listed in the page's
+  `actionablePromptIds` — the same filter Orca's renderer uses. **While a question is present, `next` is
+  stale** (it belongs to the previous turn): a client must not offer it.
 
 ### say — `POST /api/cmd {cmd:"say", id, text}`
 
@@ -210,6 +231,18 @@ Client loop:
 - When the sent text equals a pending Next variant, the bridge deletes that pending file — the same thing
   Hammerspoon does when → inserts it, so the Mac does not offer a used Next again.
 - The trail records `say <session> (<n> chars) → sent in <ms> ms | failed: <reason>` — never the text.
+
+### answer — `POST /api/cmd {cmd:"answer", id, itemId, revision, optionId}`
+
+- Answers the agent's pending question with one option (`itemId`, `revision` and the option `id` from
+  `AgentDetail.question`) through Orca's own `agentSession.respondToQuestion` (`bridge/agent.cjs answer`):
+  the same envelope Orca's renderer builds, so Orca shows the question as answered and the agent continues.
+- Refused at once with a note: a missing or over-long id (> 1024), a revision that is not a positive integer,
+  an unknown or terminal agent, Orca not running — and **over the WebSocket**, like `say`.
+- Orca refuses a stale `revision` (the question changed or was answered elsewhere): the outcome is
+  `answer: {ok: false, note}` — read `AgentDetail` again.
+- The trail records `answer <session> → answered in <ms> ms | failed in <ms> ms: <reason>` — never the
+  question or the option.
 
 ## ntfy
 

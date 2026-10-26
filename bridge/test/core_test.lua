@@ -313,4 +313,54 @@ test("commandRefusal: say needs the token, so the unauthenticated websocket may 
   eq(core.commandRefusal("go", "ws"), nil)
 end)
 
+test("commandRefusal: answer needs the token too", function()
+  eq(core.commandRefusal("answer", "ws"), "answer needs the bearer token: use POST /api/cmd")
+  eq(core.commandRefusal("answer", "http 192.168.31.83"), nil)
+end)
+
+test("answerProblem validates the answer command", function()
+  local ok = { id = "a", itemId = "orca:claude-prompt%3Ax", revision = 1, optionId = "q1:choice-2" }
+  eq(core.answerProblem(ok), nil)
+  eq(core.answerProblem({ itemId = "i", revision = 1, optionId = "o" }), "answer needs an agent id")
+  eq(core.answerProblem({ id = "a", revision = 1, optionId = "o" }), "answer needs the question's item id")
+  eq(core.answerProblem({ id = "a", itemId = "i", revision = 0, optionId = "o" }), "answer needs the question's revision")
+  eq(core.answerProblem({ id = "a", itemId = "i", revision = 1.5, optionId = "o" }), "answer needs the question's revision")
+  eq(core.answerProblem({ id = "a", itemId = "i", revision = 1 }), "answer needs an option id")
+  eq(core.answerProblem({ id = "a", itemId = "i", revision = 1, optionId = string.rep("x", 1025) }), "answer needs an option id")
+end)
+
+test("questionOf keeps a well-formed question and clips its texts", function()
+  local q = core.questionOf({ itemId = "i", revision = 2, text = "Which colour?", header = "Colour", answerable = true,
+    options = { { id = "q1:choice-1", label = "red" }, { id = "q1:choice-2", label = string.rep("g", 300) } } })
+  eq(q.itemId, "i"); eq(q.revision, 2); eq(q.text, "Which colour?"); eq(q.header, "Colour"); eq(q.answerable, true)
+  eq(#q.options, 2); eq(q.options[1].id, "q1:choice-1")
+  eq(utf8.len(q.options[2].label) <= 121, true)
+end)
+
+test("questionOf: no question, a broken one, or one without options is not answerable", function()
+  eq(core.questionOf(nil), nil)
+  eq(core.questionOf({ text = "no item id", revision = 1, options = {} }), nil)
+  local free = core.questionOf({ itemId = "i", revision = 1, text = "Say something", options = {}, answerable = true })
+  eq(free.answerable, false)
+  local many = {}
+  for n = 1, 12 do many[n] = { id = "o" .. n, label = "l" .. n } end
+  eq(#core.questionOf({ itemId = "i", revision = 1, text = "t", options = many, answerable = true }).options, core.QUESTION_OPTIONS_MAX)
+end)
+
+test("lanURLs: private IPv4 on en* interfaces, the primary first; loopback, VPN, link-local and IPv6 skipped", function()
+  local interfaces = {
+    lo0 = { "::1%lo0", "127.0.0.1" },
+    en0 = { "192.168.2.109", "fe80::1ccc:1cd5:1d43:b30a%en0" },
+    en7 = { "10.0.0.5" },
+    en1 = { "169.254.3.3" },
+    utun3 = { "100.64.1.2" },
+    en9 = { "203.0.113.5" },
+  }
+  local urls = core.lanURLs(interfaces, "en0", 7353)
+  eq(#urls, 2); eq(urls[1], "http://192.168.2.109:7353"); eq(urls[2], "http://10.0.0.5:7353")
+  eq(core.lanURLs(interfaces, "en7", 7353)[1], "http://10.0.0.5:7353")
+  eq(#core.lanURLs({ en0 = { "172.20.1.4" }, en2 = { "172.32.0.1" } }, nil, 7353), 1)
+  eq(#core.lanURLs({}, nil, 7353), 0)
+end)
+
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))

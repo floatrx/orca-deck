@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 struct ApexApp: App {
-    @StateObject private var model = AppModel(client: BridgeClient(baseURL: Config.baseURL, token: Config.token))
+    @StateObject private var model = AppModel(client: BridgeClient(routes: Config.routes, token: Config.token))
     @StateObject private var keepWatching = KeepWatching()
     @Environment(\.scenePhase) private var scenePhase
 

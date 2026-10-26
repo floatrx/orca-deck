@@ -74,6 +74,9 @@ public struct StateResponse: Codable, Equatable, Sendable {
     public let seq: Int64
     public let worktrees: [Worktree]
     public let events: [BridgeEvent]
+    /// The Mac's current LAN URLs for the remote API, the primary interface first; nil from an older bridge or
+    /// when the API does not listen on the LAN. The watch learns the first one (Routes.merge).
+    public let lan: [String]?
 
     /// Checks the protocol version first, then decodes: a newer bridge means "update the app", not a
     /// guess — even when its JSON no longer has the v1 shape.
@@ -102,6 +105,9 @@ public struct Command: Encodable, Equatable, Sendable {
     public let id: String?
     public let pane: String?
     public var text: String? = nil
+    public var itemId: String? = nil
+    public var revision: Int? = nil
+    public var optionId: String? = nil
 
     /// Focus `worktree` in Orca: its lead agent's tab when it has one, else the worktree itself.
     public static func go(_ worktree: Worktree) -> Command {
@@ -117,6 +123,28 @@ public struct Command: Encodable, Equatable, Sendable {
     public static func say(_ agentId: String, _ text: String) -> Command {
         Command(cmd: "say", id: agentId, pane: nil, text: text)
     }
+
+    /// Answer the agent's pending question with one of its options (protocol.md § answer).
+    public static func answer(_ agentId: String, _ question: AgentQuestion, option: AgentQuestion.Option) -> Command {
+        Command(cmd: "answer", id: agentId, pane: nil, itemId: question.itemId, revision: question.revision,
+                optionId: option.id)
+    }
+}
+
+/// The question an agent waits on — an AskUserQuestion (protocol.md § AgentDetail `question`).
+public struct AgentQuestion: Codable, Equatable, Sendable {
+    public struct Option: Codable, Equatable, Sendable, Identifiable {
+        public let id: String
+        public let label: String
+    }
+
+    public let itemId: String
+    public let revision: Int
+    public let text: String
+    public let header: String?
+    public let options: [Option]
+    /// False for several questions, multi-select or free text: the watch sends the user to Orca.
+    public let answerable: Bool
 }
 
 /// The outcome of the last `say` for an agent; `ok` is nil while it is still sending.
@@ -140,7 +168,11 @@ public struct AgentDetail: Codable, Equatable, Sendable {
     public let message: String
     /// False while `message` is still Orca's 200-character cut.
     public let full: Bool
-    /// The pending Next variants; empty when none or already used.
+    /// The pending Next variants; empty when none or already used — and stale while `question` is set.
     public let next: [String]
+    /// The question the agent waits on; nil when none.
+    public let question: AgentQuestion?
     public let send: SendOutcome?
+    /// The last answer to a question, like `send`.
+    public let answer: SendOutcome?
 }
