@@ -58,20 +58,38 @@ final class ApexUITests: XCTestCase {
         return Int(list.value as? String ?? "") ?? cards(app).count
     }
 
-    /// Acceptance: the crown moves one worktree per detent and wraps past the last one. The simulator ignores
-    /// tiny turns; 0.22 of a rotation is one detent there (probed: 0.2–0.3 → one, 0.4 → two).
+    /// Acceptance: the crown moves one worktree per detent and wraps past the last one. The simulator turns a
+    /// rotation into a varying number of detents (0.22 of a turn is one or two), so each step compares the move of
+    /// the selection with the detents the crown really produced (`knob-crown`), and the run goes past the end.
     func testCrownMovesExactlyOneWorktreePerDetentAndWraps() {
         let app = launch(["-apexSelectRepo", "orca-deck", "-apex.hideInactive", "NO", "-apex.hideCompletedAfter", "0"])
         let centre = app.buttons["knob-centre"]
+        let crown = app.descendants(matching: .any)["knob-crown"]
         var (index, count) = waitForWorktrees(centre)
         XCTAssertGreaterThan(count, 2)
-        for _ in 0...count {
+        var detents = Int(crown.value as? String ?? "") ?? 0
+        var travelled = 0
+        var turns = 0
+        var wrapped = false
+        // A turn of the same size gives 0, 1 or 2 detents in the simulator: the rule is "the selection moves by
+        // exactly the detents the crown produced", and the run keeps turning until it has gone past the end.
+        while travelled <= count, turns < count * 4 {
+            turns += 1
             XCUIDevice.shared.rotateDigitalCrown(delta: 0.22, velocity: 1)
             Thread.sleep(forTimeInterval: 0.8)
-            let next = position(centre)?.index
-            XCTAssertEqual(next, (index + 1) % count, "one detent must move exactly one worktree, wrapping round")
-            index = next ?? index
+            let nowDetents = Int(crown.value as? String ?? "") ?? detents
+            let step = nowDetents - detents
+            XCTAssertGreaterThanOrEqual(step, 0, "a forward turn never goes back")
+            let next = position(centre)?.index ?? index
+            XCTAssertEqual(next, (index + step) % count,
+                           "\(step) detent(s) must move exactly \(step) worktree(s), wrapping round")
+            if next < index { wrapped = true }
+            index = next
+            detents = nowDetents
+            travelled += step
         }
+        XCTAssertGreaterThan(travelled, count, "the crown went all the way round")
+        XCTAssertTrue(wrapped, "the selection wraps past the last worktree")
     }
 
     /// Acceptance: swipe left opens the agent page; swipe right from the main page opens Settings.

@@ -16,19 +16,16 @@ public enum Dial {
     }
 
     /// How long a crown step's slide lasts; from then on `slide(after:)` is exactly 1.
-    public static let slideSettle = 0.6
+    public static let slideSettle = 0.38
 
-    /// A crown step's progress, 0 → 1, `seconds` after the step: a damped spring (response 0.38 s, damping
-    /// 0.78 — about 2 % overshoot). The view turns it into a phase per frame, so every dot moves along the
-    /// track; an implicit position animation would cut straight across the screen.
+    /// A crown step's progress, 0 → 1, `seconds` after the step: a critically damped spring (response 0.28 s) —
+    /// quick, and it never overshoots: dots that fly past and come back read as noise on a small screen (user,
+    /// 2026-10-26). The view turns it into a phase per frame, so every dot moves along the track.
     public static func slide(after seconds: Double) -> Double {
         guard seconds > 0 else { return 0 }
         guard seconds < slideSettle else { return 1 }
-        let omega = 2 * Double.pi / 0.38
-        let zeta = 0.78
-        let damped = omega * (1 - zeta * zeta).squareRoot()
-        let envelope = exp(-zeta * omega * seconds)
-        return 1 - envelope * (cos(damped * seconds) + zeta * omega / damped * sin(damped * seconds))
+        let omegaT = 2 * Double.pi / 0.28 * seconds
+        return 1 - (1 + omegaT) * exp(-omegaT)
     }
 }
 

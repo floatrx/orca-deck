@@ -194,10 +194,11 @@ final class UnevenTrackTests: XCTestCase {
         XCTAssertEqual(Dial.slide(after: 5), 1)
     }
 
-    func testTheSlideRisesFastWithASmallOvershoot() {
-        XCTAssertGreaterThan(Dial.slide(after: 0.12), 0.5, "most of the way within 120 ms")
+    func testTheSlideRisesFastAndNeverOvershoots() {
+        XCTAssertGreaterThan(Dial.slide(after: 0.12), 0.7, "most of the way within 120 ms")
         let samples = stride(from: 0.0, through: Dial.slideSettle, by: 0.005).map { Dial.slide(after: $0) }
-        XCTAssertLessThan(samples.max() ?? 0, 1.04, "the overshoot stays small")
-        XCTAssertEqual(samples.last ?? 0, 1, accuracy: 0.002, "no jump when it settles")
+        XCTAssertLessThanOrEqual(samples.max() ?? 2, 1, "no overshoot: the dots never fly past and come back")
+        XCTAssertEqual(zip(samples.dropFirst(), samples).allSatisfy { $0 >= $1 }, true, "monotonic")
+        XCTAssertEqual(Dial.slide(after: Dial.slideSettle - 0.001), 1, accuracy: 0.003, "no jump when it settles")
     }
 }

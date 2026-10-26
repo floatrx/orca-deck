@@ -6,6 +6,8 @@
 #   watch/install.sh                  # bridge on the Mac's LAN address (configure.sh's default)
 #   watch/install.sh http://host:7353 # another bridge URL
 #   APEX_WATCH_UDID=<udid> watch/install.sh
+#   APEX_CONFIGURATION=Debug watch/install.sh   # default Release: -O makes SwiftUI's per-frame work several
+#                                               # times cheaper on the watch (Debug is -Onone)
 #
 # The watch must be awake: raise the wrist and keep it unlocked until the hello line appears.
 set -euo pipefail
@@ -13,6 +15,7 @@ cd "$(dirname "$0")"
 
 TRAIL=/tmp/orca-deck-bridge.log
 BUILD=/tmp/apex-dd
+CONFIGURATION=${APEX_CONFIGURATION:-Release}
 
 watch=${APEX_WATCH_UDID:-}
 if [[ -z $watch ]]; then
@@ -26,9 +29,9 @@ fi
 
 ./configure.sh "$@"
 echo "building…"
-xcodebuild -project Apex.xcodeproj -scheme Apex -destination 'generic/platform=watchOS' \
+xcodebuild -project Apex.xcodeproj -scheme Apex -configuration "$CONFIGURATION" -destination 'generic/platform=watchOS' \
   -allowProvisioningUpdates -derivedDataPath "$BUILD" -quiet build
-app="$BUILD/Build/Products/Debug-watchos/Apex.app"
+app="$BUILD/Build/Products/$CONFIGURATION-watchos/Apex.app"
 
 expires=$(security cms -D -i "$app/embedded.mobileprovision" 2>/dev/null \
   | plutil -extract ExpirationDate raw -o - - 2>/dev/null || echo "?")

@@ -22,6 +22,13 @@ struct KnobView: View {
     /// computed per frame, so the dots move along the track only.
     @State private var phaseFrom = 0.0
     @State private var slideStart = Date.distantPast
+    /// A crown step is sliding: only then does the dots' timeline run, at the display's full rate.
+    @State private var sliding = false
+    @State private var slideToken = 0
+    /// The dot chosen before the current one: it shrinks back while the new one grows in.
+    @State private var previousSelected: Int?
+    /// Measures the frame gaps of the first crown steps after launch and reports them to the trail.
+    @State private var frameProbe = FrameProbe()
     /// +1 when the crown moved forward, −1 backward — the centre slides in from that side.
     @State private var direction = 1
     /// A long press already acted; the button's tap on release must not focus as well.
@@ -46,7 +53,19 @@ struct KnobView: View {
     private var paused: Bool { dimmed || !active }
 
     private var count: Int { model.worktrees.count }
+    /// What the dots' Canvas draws per worktree.
+    private var dotModels: [PerimeterDots.Dot] {
+        model.worktrees.map { PerimeterDots.Dot(bucket: Agents.shown($0, picked: model.picked[$0.id])?.bucket,
+                                                empty: $0.agents.isEmpty) }
+    }
+    /// A dot needs you: the dots' timeline keeps running at 15 fps for its pulse.
+    private var dotsBreathe: Bool { dotModels.contains { !$0.empty && $0.bucket == .attention } }
     private var bucket: Bucket? { model.shownAgent?.bucket }
+    /// The bucket the background, the halo, the comet and the sonar show: the shown agent's, once the crown has
+    /// rested for `restDelay`. Turning past five worktrees must not flash five colours across the screen.
+    @State private var restingBucket: Bucket?
+    @State private var restToken = 0
+    private static let restDelay: UInt64 = 350_000_000
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,21 +73,24 @@ struct KnobView: View {
             let topRadius = topRadius + DebugLaunch.cornerOffset
             let bottomRadius = bottomRadius + DebugLaunch.cornerOffset
             ZStack {
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
-                    let time = context.date.timeIntervalSinceReferenceDate - pausedTotal
-                    ZStack {
-                        Aurora(bucket: bucket, time: time)
-                            .id(bucket)
-                            .transition(.opacity)
-                        if bucket == .working {
+                // The glow drifts slowly: 15 frames a second are plenty and leave the GPU to the crown's slide.
+                // Paused during a crown step's slide: the GPU goes to the dots for those 0.38 s.
+                TimelineView(.animation(minimumInterval: 1 / 15, paused: paused || sliding)) { context in
+                    Aurora(bucket: restingBucket, time: context.date.timeIntervalSinceReferenceDate - pausedTotal)
+                        .id(restingBucket)
+                        .transition(.opacity)
+                }
+                .animation(.easeInOut(duration: 0.6), value: restingBucket)
+                if restingBucket == .working || restingBucket == .attention {
+                    TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
+                        let time = context.date.timeIntervalSinceReferenceDate - pausedTotal
+                        if restingBucket == .working {
                             Comet(rect: track, top: topRadius, bottom: bottomRadius, time: time)
-                        }
-                        if bucket == .attention {
+                        } else {
                             Sonar(center: Track.point(at: 0, in: track, top: topRadius, bottom: bottomRadius), time: time)
                         }
                     }
                 }
-                .animation(.easeInOut(duration: 0.6), value: bucket)
                 // Measures the track's frame against the display: its corners become concentric.
                 Color.clear
                     .frame(width: track.width, height: track.height)
@@ -77,11 +99,16 @@ struct KnobView: View {
                                                onTransient: reportTransient))
                     .modifier(ConcentricRadius(edge: .bottom, fallback: Self.fallbackRadius, radius: $bottomRadius,
                                                onTransient: reportTransient))
-                TrackHalo(bucket: bucket, rect: track, top: topRadius, bottom: bottomRadius)
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
-                    PerimeterDots(worktrees: model.worktrees, selected: model.selected, picked: model.picked,
-                                  rect: track, top: topRadius, bottom: bottomRadius,
-                                  phase: paused ? phase : dotsPhase(at: context.date))
+                TrackHalo(bucket: restingBucket, rect: track, top: topRadius, bottom: bottomRadius)
+                // The dots move only on a crown step: their timeline runs at the display's full rate for the
+                // slide (Dial.slideSettle) and is paused the rest of the time.
+                // Full rate while a step slides; 15 fps while a dot breathes for attention; paused otherwise.
+                TimelineView(.animation(minimumInterval: sliding ? nil : 1 / 15,
+                                        paused: paused || !(sliding || dotsBreathe))) { context in
+                    PerimeterDots(dots: dotModels, selected: model.selected, previous: previousSelected,
+                                  selectedAt: slideStart, rect: track, top: topRadius, bottom: bottomRadius,
+                                  phase: sliding && !paused ? frameProbe.frame(dotsPhase(at: context.date), at: context.date) : phase,
+                                  date: context.date)
                 }
                 centre
                     .frame(width: track.width - 26, height: track.height - 40)
@@ -97,6 +124,13 @@ struct KnobView: View {
                     .foregroundStyle(Theme.muted.opacity(0.6))
                     .position(Self.hintPoint(in: track, radius: bottomRadius, leading: false))
                     .accessibilityHidden(true)
+                // For UI tests: the crown's detent count, so a test checks "one detent = one worktree" against the
+                // detents the crown really produced (the simulator's turn-to-detent conversion varies).
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("knob-crown")
+                    .accessibilityValue("\(Int(crown.rounded()))")
             }
             // Scoped to the shake: an event must not animate anything else in its transaction (the comet and
             // the dots would cut straight across the screen instead of following the track).
@@ -121,7 +155,11 @@ struct KnobView: View {
             direction = value >= old ? 1 : -1
             model.select(Dial.index(forCrown: value, count: count))
         }
-        .onChange(of: model.selected) { _, index in aim(at: index, animated: true) }
+        .onChange(of: model.selected) { old, index in
+            previousSelected = old
+            aim(at: index, animated: true)
+        }
+        .onChange(of: bucket) { _, _ in settleBucket() }
         .onChange(of: count) { _, _ in aim(at: model.selected, animated: false) }
         .onChange(of: active) { _, isActive in focused = isActive }
         .onChange(of: paused) { _, isPaused in
@@ -142,6 +180,7 @@ struct KnobView: View {
         }
         .onAppear {
             focused = active
+            restingBucket = bucket
             aim(at: model.selected, animated: false)
         }
     }
@@ -175,12 +214,38 @@ struct KnobView: View {
         if animated {
             // From wherever the dots are now, so a quick second step continues the slide without a jump.
             let now = Date()
-            phaseFrom = dotsPhase(at: now)
+            phaseFrom = sliding ? dotsPhase(at: now) : phase
             slideStart = now
+            startSlide()
         } else {
             phaseFrom = target
         }
         phase = target
+    }
+
+    /// Shows the shown agent's bucket in the background once the crown has rested; a newer change restarts it.
+    private func settleBucket() {
+        restToken += 1
+        let token = restToken
+        Task {
+            try? await Task.sleep(nanoseconds: Self.restDelay)
+            guard token == restToken, restingBucket != bucket else { return }
+            restingBucket = bucket
+        }
+    }
+
+    /// Runs the dots' timeline for one slide; a newer step extends it. The first slides report their frame gaps.
+    private func startSlide() {
+        slideToken += 1
+        let token = slideToken
+        if !sliding { frameProbe.begin() }
+        sliding = true
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64((Dial.slideSettle + 0.05) * 1_000_000_000))
+            guard token == slideToken else { return }
+            sliding = false
+            if let line = frameProbe.finish() { model.report(line) }
+        }
     }
 
     /// The track's offset at `date`: on the way from `phaseFrom` to `phase` while a crown step slides.
@@ -231,6 +296,14 @@ private struct CentreStack: View {
     let direction: Int
     let nowMs: Double
 
+    /// The worktree whose card is on screen. A crown step fades the card out, then swaps it, then fades it in —
+    /// one card at a time, never two texts on top of each other (user, 2026-10-26: the overlapping transition
+    /// read as lag).
+    @State private var shownId: String?
+    @State private var cardOpacity = 1.0
+    @State private var cardOffset: CGFloat = 0
+    @State private var swapping = false
+
     var body: some View {
         VStack(spacing: 4) {
             HStack(spacing: 3) {
@@ -248,12 +321,10 @@ private struct CentreStack: View {
             .animation(.easeInOut(duration: 0.25), value: summary)
             Spacer(minLength: 0)
             ZStack {
-                if let worktree = model.selectedWorktree {
+                if let worktree = model.worktrees.first(where: { $0.id == shownId }) ?? model.selectedWorktree {
                     WorktreeCard(model: model, worktree: worktree, nowMs: nowMs)
-                        .id(worktree.id)
-                        .transition(.asymmetric(
-                            insertion: .push(from: direction > 0 ? .bottom : .top),
-                            removal: .opacity.combined(with: .scale(scale: 0.92))))
+                        .opacity(cardOpacity)
+                        .offset(y: cardOffset)
                 } else {
                     Text(model.connection != .online ? "waiting for the bridge…"
                          : model.hiddenCount > 0 ? "nothing active" : "no workspaces")
@@ -261,8 +332,30 @@ private struct CentreStack: View {
                         .foregroundStyle(Theme.muted)
                 }
             }
-            .animation(.spring(response: 0.34, dampingFraction: 0.82), value: model.selectedWorktree?.id)
+            .onAppear { shownId = model.selectedWorktree?.id }
+            .onChange(of: model.selectedWorktree?.id) { _, _ in swapCard() }
             Spacer(minLength: 0)
+        }
+    }
+
+    /// Out in 70 ms, swap to the selection as it is then (several quick steps collapse into one swap), in over
+    /// 160 ms with a 4 pt drift from the crown's direction.
+    private func swapCard() {
+        guard !swapping else { return }
+        guard model.selectedWorktree?.id != shownId else { return }
+        swapping = true
+        withAnimation(.easeIn(duration: 0.07)) {
+            cardOpacity = 0
+        } completion: {
+            shownId = model.selectedWorktree?.id
+            cardOffset = direction > 0 ? 4 : -4
+            withAnimation(.easeOut(duration: 0.16)) {
+                cardOpacity = 1
+                cardOffset = 0
+            }
+            swapping = false
+            // A step that landed during the fade-out still needs its card.
+            if model.selectedWorktree?.id != shownId { swapCard() }
         }
     }
 
@@ -290,8 +383,11 @@ private struct WorktreeCard: View {
     let nowMs: Double
 
     var body: some View {
-        let agent = model.shownAgent
-        let counter = Centre.counter(index: model.selected, count: model.worktrees.count,
+        // Everything from this card's own worktree, not the current selection: while the card fades out after a
+        // crown step, its texts must not jump to the next worktree.
+        let agent = Agents.shown(worktree, picked: model.picked[worktree.id])
+        let index = model.worktrees.firstIndex(where: { $0.id == worktree.id }) ?? model.selected
+        let counter = Centre.counter(index: index, count: model.worktrees.count,
                                      worktree: worktree, agent: agent, nowMs: nowMs)
         VStack(spacing: 4) {
             StateChip(agent: agent)
@@ -384,8 +480,9 @@ private struct TrackHalo: View {
     }
 }
 
-/// While the agent works: a comet with a fading tail runs clockwise along the track. Its position comes from
-/// `time` alone and is never animated implicitly: it moves only along the track.
+/// While the agent works: a comet with a fading tail runs clockwise along the track. Drawn in one Canvas — 17
+/// SwiftUI views redrawn 30 times a second cost the watch frames (measured 2026-10-26). Its position comes from
+/// `time` alone: it moves only along the track.
 private struct Comet: View {
     let rect: CGRect
     let top: CGFloat
@@ -397,23 +494,21 @@ private struct Comet: View {
 
     var body: some View {
         let head = (time / Self.lap).truncatingRemainder(dividingBy: 1)
-        ZStack {
-            ForEach(0..<Self.tail, id: \.self) { step in
+        Canvas { context, _ in
+            for step in stride(from: Self.tail - 1, through: 0, by: -1) {
                 let fade = 1 - Double(step) / Double(Self.tail)
-                Circle()
-                    .fill(Theme.working)
-                    .frame(width: 2 + 3 * fade, height: 2 + 3 * fade)
-                    .opacity(0.9 * fade)
-                    .position(Track.point(at: head - Double(step) * 0.007, in: rect, top: top, bottom: bottom))
+                let point = Track.point(at: head - Double(step) * 0.007, in: rect, top: top, bottom: bottom)
+                context.fill(Self.circle(at: point, diameter: 2 + 3 * fade), with: .color(Theme.working.opacity(0.9 * fade)))
             }
-            Circle()
-                .fill(Color.white)
-                .frame(width: 4, height: 4)
-                .shadow(color: Theme.working, radius: 5)
-                .position(Track.point(at: head, in: rect, top: top, bottom: bottom))
+            let point = Track.point(at: head, in: rect, top: top, bottom: bottom)
+            context.fill(Self.circle(at: point, diameter: 11), with: .color(Theme.working.opacity(0.45)))
+            context.fill(Self.circle(at: point, diameter: 4), with: .color(.white))
         }
-        .transaction { $0.animation = nil }
         .allowsHitTesting(false)
+    }
+
+    static func circle(at point: CGPoint, diameter: CGFloat) -> Path {
+        Path(ellipseIn: CGRect(x: point.x - diameter / 2, y: point.y - diameter / 2, width: diameter, height: diameter))
     }
 }
 
@@ -440,55 +535,89 @@ private struct Sonar: View {
     }
 }
 
-/// One dot per worktree on the track at `phase` (turns). A crown step's slide arrives as a new phase every
-/// frame (KnobView.dotsPhase), so every dot moves along the track. That is the only way a dot moves: its
-/// position is never animated implicitly, which would draw a straight line across the screen.
+/// One dot per worktree on the track at `phase` (turns), drawn in one Canvas: a crown step redraws the dots on
+/// every frame, and one SwiftUI view per dot (each with its own animations) held the real watch at ~20 fps
+/// (FrameProbe, 2026-10-26). Everything that moves is computed from time — the slide's phase, the chosen dot
+/// growing in (`selectedAt`), the attention pulse — so no implicit animation can ever cut across the screen.
 private struct PerimeterDots: View {
-    let worktrees: [Worktree]
+    struct Dot {
+        let bucket: Bucket?
+        let empty: Bool
+    }
+
+    let dots: [Dot]
     let selected: Int
-    let picked: [String: String]
+    /// The dot that was chosen before `selected`, shrinking back while the new one grows.
+    let previous: Int?
+    let selectedAt: Date
     let rect: CGRect
     let top: CGFloat
     let bottom: CGFloat
     let phase: Double
+    let date: Date
+
+    private static let size: CGFloat = 12
+    private static let small: CGFloat = 0.58
+    private static let grow: Double = 0.2
 
     var body: some View {
-        ZStack {
-            ForEach(Array(worktrees.enumerated()), id: \.element.id) { index, worktree in
-                let t = Double(index) / Double(max(worktrees.count, 1)) + phase
-                Dot(bucket: Agents.shown(worktree, picked: picked[worktree.id])?.bucket,
-                    empty: worktree.agents.isEmpty,
-                    selected: index == selected)
-                    .position(Track.point(at: t, in: rect, top: top, bottom: bottom))
-                    .transaction { $0.animation = nil }
+        Canvas { context, _ in
+            let count = max(dots.count, 1)
+            let grown = min(1, max(0, date.timeIntervalSince(selectedAt) / Self.grow))
+            let eased = 1 - (1 - grown) * (1 - grown)
+            // The attention pulse: opacity 1 → 0.4 → 1 over 1.1 s, like the Pulse modifier it replaces.
+            let pulse = 0.7 + 0.3 * cos(date.timeIntervalSinceReferenceDate * 2 * .pi / 1.1)
+            for (index, dot) in dots.enumerated() {
+                let point = Track.point(at: Double(index) / Double(count) + phase, in: rect, top: top, bottom: bottom)
+                let scale: CGFloat
+                if index == selected {
+                    scale = Self.small + (1 - Self.small) * eased
+                } else if index == previous {
+                    scale = 1 - (1 - Self.small) * eased
+                } else {
+                    scale = Self.small
+                }
+                let diameter = Self.size * scale
+                let isSelected = index == selected
+                if dot.empty {
+                    let ring = Comet.circle(at: point, diameter: diameter - (isSelected ? 1.5 : 1))
+                    context.fill(Comet.circle(at: point, diameter: diameter), with: .color(.black))
+                    context.stroke(ring, with: .color(isSelected ? Theme.ink : Theme.idle), lineWidth: isSelected ? 1.5 : 1)
+                } else {
+                    let color = Theme.color(dot.bucket)
+                    let breathing = dot.bucket == .attention ? pulse : 1
+                    if isSelected {
+                        context.fill(Comet.circle(at: point, diameter: diameter * 1.9), with: .color(color.opacity(0.3 * eased)))
+                    }
+                    context.fill(Comet.circle(at: point, diameter: diameter),
+                                 with: .color(color.opacity((isSelected ? 1 : 0.7) * breathing)))
+                }
             }
         }
+        .allowsHitTesting(false)
     }
 }
 
-/// A worktree's dot. The chosen one is bigger, glows and springs into place on every crown step.
-private struct Dot: View {
-    let bucket: Bucket?
-    let empty: Bool
-    let selected: Bool
+/// Frame gaps of a crown step's slide, as the dots' timeline delivers them: the first five slides after launch
+/// go to the trail ("knob slide: 36 frames · avg 16.7 ms · worst 25 ms"), so a lag on the real watch is measured,
+/// not guessed. A reference type: recording a frame must not invalidate the view.
+final class FrameProbe {
+    private var dates: [Date] = []
+    private var reported = 0
 
-    var body: some View {
-        Group {
-            if empty {
-                Circle()
-                    .fill(Color.black)
-                    .overlay(Circle().strokeBorder(selected ? Theme.ink : Theme.idle, lineWidth: selected ? 1.5 : 1))
-            } else {
-                Circle()
-                    .fill(Theme.color(bucket))
-                    .opacity(selected ? 1 : 0.7)
-                    .shadow(color: selected ? Theme.color(bucket) : .clear, radius: selected ? 6 : 0)
-            }
-        }
-        .frame(width: 12, height: 12)
-        .scaleEffect(selected ? 1 : 0.58)
-        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: selected)
-        .modifier(Pulse(enabled: bucket == .attention && !empty))
-        .animation(.easeInOut(duration: 0.4), value: bucket)
+    func begin() { dates.removeAll(keepingCapacity: true) }
+
+    /// Records the frame at `date` and passes `value` through, so it can sit inside the view's expression.
+    func frame(_ value: Double, at date: Date) -> Double {
+        if dates.last != date { dates.append(date) }
+        return value
+    }
+
+    func finish() -> String? {
+        guard reported < 5, dates.count > 2 else { return nil }
+        reported += 1
+        let gaps = zip(dates.dropFirst(), dates).map { $0.timeIntervalSince($1) * 1000 }
+        let average = gaps.reduce(0, +) / Double(gaps.count)
+        return String(format: "knob slide: %d frames · avg %.1f ms · worst %.0f ms", dates.count, average, gaps.max() ?? 0)
     }
 }
