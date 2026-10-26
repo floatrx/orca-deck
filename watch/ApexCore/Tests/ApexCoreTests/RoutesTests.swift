@@ -69,4 +69,9 @@ final class RoutesTests: XCTestCase {
         let old = Data(#"{"v":1,"seq":5,"worktrees":[],"events":[]}"#.utf8)
         XCTAssertNil(try StateResponse.decode(old).lan, "an older bridge has no lan field")
     }
+
+    func testGatewayStatusesMeanTheTunnelCannotReachTheBridge() {
+        for code in [502, 503, 504, 521, 522, 530] { XCTAssertTrue(Routes.isGatewayStatus(code), "\(code)") }
+        for code in [200, 400, 401, 404, 500] { XCTAssertFalse(Routes.isGatewayStatus(code), "\(code)") }
+    }
 }

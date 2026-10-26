@@ -32,6 +32,12 @@ public enum Routes {
         }
     }
 
+    /// An HTTP status that a gateway (the Cloudflare tunnel) sends when it cannot reach the bridge behind it —
+    /// the bridge itself never answers with one. Another route may still reach the bridge.
+    public static func isGatewayStatus(_ code: Int) -> Bool {
+        [502, 503, 504].contains(code) || (520...530).contains(code)
+    }
+
     /// How long one try may take: a LAN route answers in ~70 ms or not at all, so it gives up fast; the tunnel
     /// crosses the internet (~190 ms, more on a bad link).
     public static func timeout(for url: URL) -> TimeInterval {

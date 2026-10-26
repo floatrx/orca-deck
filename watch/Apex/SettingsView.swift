@@ -32,9 +32,23 @@ struct SettingsView: View {
                 Toggle("Hide inactive", isOn: $model.hideInactive)
                     .accessibilityIdentifier("hide-inactive")
             } footer: {
-                Text(model.hiddenCount > 0
-                     ? "Worktrees without agents are hidden: \(model.hiddenCount) now."
-                     : "Hides worktrees without agents.")
+                Text("Hides worktrees without agents.")
+            }
+            Section {
+                // Inline: three choices, one tap each.
+                Picker("Hide completed", selection: $model.hideCompletedAfter) {
+                    ForEach(CompletedWindow.allCases) { window in
+                        Text(window.label).tag(window.rawValue)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                .accessibilityIdentifier("hide-completed")
+            } header: {
+                Text("Hide completed")
+            } footer: {
+                Text("A worktree whose agents are all done leaves the main page after that; a fresh Done stays for its Next."
+                     + (model.hiddenCount > 0 ? " Hidden now: \(model.hiddenCount)." : ""))
             }
             Section("Bridge") {
                 LabeledContent("Status", value: model.connectionLabel)

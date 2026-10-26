@@ -169,7 +169,7 @@ struct AgentView: View {
         HStack(spacing: 5) {
             Circle().fill(Theme.color(agent.bucket)).frame(width: 6, height: 6)
                 .modifier(Pulse(enabled: agent.bucket == .working || agent.bucket == .attention))
-            Text(worktree.name)
+            Text(Centre.title(worktree))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)

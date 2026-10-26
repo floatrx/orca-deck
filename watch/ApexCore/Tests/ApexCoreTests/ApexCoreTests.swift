@@ -208,6 +208,20 @@ final class SelectionTests: XCTestCase {
         XCTAssertNil(Selection.calling(in: []))
     }
 
+    func testHidingCompletedDropsOnlyWorktreesDoneLongEnough() throws {
+        let day: Double = 86_400
+        let now = 10 * day * 1000
+        let list = [try worktree("stale", agents: [("s1", "done", now - 2 * day * 1000)]),
+                    try worktree("fresh", agents: [("f1", "done", now - 600_000)]),
+                    try worktree("mixed", agents: [("m1", "done", now - 2 * day * 1000), ("m2", "working", now)]),
+                    try worktree("calls", agents: [("c1", "attention", now - 2 * day * 1000)])]
+        let shown = Selection.visible(list, hideInactive: true, hideCompletedAfter: day, nowMs: now).map(\.id)
+        XCTAssertEqual(shown, ["fresh", "mixed", "calls"], "a day-old done hides; a fresh done, a mixed one and a caller stay")
+        XCTAssertEqual(Selection.visible(list, hideInactive: true, hideCompletedAfter: nil, nowMs: now).count, 4, "off")
+        XCTAssertEqual(Selection.visible(list, hideInactive: true, hideCompletedAfter: day, nowMs: now, keep: "stale").count, 4,
+                       "the worktree on screen never vanishes")
+    }
+
     func testHidingInactiveDropsTheWorktreesWithoutAgents() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "state", withExtension: "json", subdirectory: "Fixtures"))
         let all = try StateResponse.decode(Data(contentsOf: url)).worktrees

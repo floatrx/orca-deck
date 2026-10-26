@@ -22,9 +22,25 @@ public enum Selection {
         return best.map { ($0.worktreeId, $0.agentId) }
     }
 
-    /// The worktrees the watch shows: without the inactive ones (no agents at all) when `hideInactive`.
-    public static func visible(_ worktrees: [Worktree], hideInactive: Bool) -> [Worktree] {
-        hideInactive ? worktrees.filter { !$0.agents.isEmpty } : worktrees
+    /// The worktrees the watch shows: without the inactive ones (no agents at all) when `hideInactive`, and
+    /// without the completed ones — every agent done for at least `hideCompletedAfter` seconds (nil: never) —
+    /// so the knob carries what works and what calls. A fresh done stays: it is the call to send its Next.
+    /// `keep` (the worktree on screen) is never hidden from under the user.
+    public static func visible(_ worktrees: [Worktree], hideInactive: Bool, hideCompletedAfter: Double? = nil,
+                               nowMs: Double = 0, keep: String? = nil) -> [Worktree] {
+        worktrees.filter { worktree in
+            if worktree.id == keep { return true }
+            if hideInactive && worktree.agents.isEmpty { return false }
+            if let after = hideCompletedAfter, isCompleted(worktree, for: after, nowMs: nowMs) { return false }
+            return true
+        }
+    }
+
+    /// Every agent is done, and the latest of them finished at least `seconds` ago.
+    public static func isCompleted(_ worktree: Worktree, for seconds: Double, nowMs: Double) -> Bool {
+        guard !worktree.agents.isEmpty, worktree.agents.allSatisfy({ $0.bucket == .done }) else { return false }
+        let finished = worktree.agents.compactMap(\.since).max() ?? 0
+        return nowMs - finished >= seconds * 1000
     }
 
     /// The `size` rows shown around `selected`: centred, sliding at the edges, shorter for a short list.

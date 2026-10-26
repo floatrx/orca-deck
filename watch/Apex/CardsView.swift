@@ -52,6 +52,8 @@ struct CardsView: View {
                     }
                 }
                 .accessibilityIdentifier("cards-list")
+                // The exact count for tests: a LazyVStack only builds the cards on screen.
+                .accessibilityValue("\(model.worktrees.count)")
                 // The list may still be empty on appear: centre the chosen card once it arrives.
                 .onAppear { centre(proxy) }
                 .onChange(of: model.selectedWorktree?.id) { _, _ in centre(proxy) }
@@ -89,7 +91,7 @@ struct CardsView: View {
     private var summaryText: String {
         if let banner = model.banner { return banner }
         if model.connection != .online { return model.connectionLabel }
-        return Centre.summary(model.worktrees)
+        return Centre.summary(model.allWorktrees)
     }
 
     private var emptyNote: String {
@@ -124,7 +126,7 @@ struct CardsView: View {
         })
         .accessibilityIdentifier("worktree-card")
         .accessibilityValue(selected ? "selected" : "")
-        .accessibilityLabel("\(worktree.name), \(Centre.state(agent))")
+        .accessibilityLabel("\(Centre.title(worktree)), \(Centre.state(agent))")
         .accessibilityHint("Tap to show in Orca. Swipe left for the agent.")
     }
 }
@@ -147,7 +149,7 @@ private struct WorktreeRow: View {
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 7, height: 7)
                     .modifier(Pulse(enabled: busy))
-                Text(Format.repoSubtitle(worktree) ?? worktree.name)
+                Text(Centre.title(worktree))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)

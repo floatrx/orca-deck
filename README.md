@@ -114,6 +114,9 @@ button per option instead of the Next card: a tap counts down 3 s (Undo), then a
 `agentSession.respondToQuestion` — Orca shows it answered and the agent continues. The stale Next and Send are
 hidden while the question waits. Multi-select, several questions or free text: "Answer in Orca".
 
+The project (the repo) is the big label and the branch sits small beside it — worktree names repeat ("main" in
+every repo), the project is what the eye looks for.
+
 The app is alive: the background glows in the agent's colour, a comet runs the track while it works, sonar
 rings leave the chosen dot while it needs you. Every motion follows the track: a crown step slides the dots
 along it frame by frame (`Dial.slide`), never in a straight line. There is no system clock — the whole display
@@ -121,7 +124,8 @@ belongs to the app; the track's corners are concentric with the display (`Geomet
 watchOS 27; transient readings are ignored).
 
 **Swipe right** for Settings: the main page's **Layout** (Knob or Cards — a scrolling list of worktree cards),
-**Hide inactive** (worktrees without agents; on by default), bridge status, a picker for the "needs you"
+**Hide inactive** (worktrees without agents; on by default), **Hide completed** (worktrees whose agents have
+all been done for an hour or a day — default a day; a fresh Done stays so its Next can be sent), bridge status, a picker for the "needs you"
 haptic, haptic tests, and **Keep watching** — a mindfulness extended runtime session that keeps Apex awake with
 the wrist down for up to an hour, so it can still buzz. watchOS mutes an app's haptics with the wrist down:
 without Keep watching, an event that came then buzzes once on the wrist raise ("missed · …"), and ntfy is the

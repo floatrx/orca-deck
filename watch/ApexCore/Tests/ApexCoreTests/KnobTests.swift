@@ -102,7 +102,8 @@ final class CentreTests: XCTestCase {
 
     func testMetaAndDetail() throws {
         let deck = try worktree(deckJSON)
-        XCTAssertEqual(Centre.meta(deck, agent: deck.agents[1]), "orca-deck · chat · claude")
+        XCTAssertEqual(Centre.title(deck), "orca-deck", "the project is the big label")
+        XCTAssertEqual(Centre.meta(deck, agent: deck.agents[1]), "main · chat · claude", "the branch goes small")
         XCTAssertEqual(Centre.detail(deck.agents[0]), "▸ browser_click — clicking")
         XCTAssertEqual(Centre.detail(deck.agents[1]), "Which transport?")
     }

@@ -29,6 +29,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var worktrees: [Worktree] = []
     /// How many inactive worktrees `hideInactive` takes out of the list.
     @Published private(set) var hiddenCount = 0
+    /// Settings: hide worktrees done longer than this (seconds; 0 = never). Saved; re-filters the list at once.
+    @Published var hideCompletedAfter = Preferences.hideCompletedAfter {
+        didSet {
+            guard hideCompletedAfter != oldValue else { return }
+            UserDefaults.standard.set(hideCompletedAfter, forKey: Preferences.hideCompletedAfterKey)
+            apply(allWorktrees)
+        }
+    }
     /// Settings: hide worktrees with no agents at all. Saved; re-filters the list at once.
     @Published var hideInactive = Preferences.hideInactive {
         didSet {
@@ -84,8 +92,8 @@ final class AppModel: ObservableObject {
     /// The event that called while the wrist was down — a "needs you" beats a "done", else the latest: the
     /// wrist raise turns the knob to its agent.
     private var caller: BridgeEvent?
-    /// The bridge's full list, before `hideInactive`.
-    private var allWorktrees: [Worktree] = []
+    /// The bridge's full list, before `hideInactive` and `hideCompletedAfter` — the summary counts every agent.
+    @Published private(set) var allWorktrees: [Worktree] = []
     private var cursor = EventCursor()
     private var selectedId: String?
     private var bannerTask: Task<Void, Never>?
@@ -174,11 +182,11 @@ final class AppModel: ObservableObject {
                 let ack = try await client.send(command)
                 if !ack.ok {
                     Haptics.failure()
-                    show("\(worktree.name): \(ack.note ?? "failed")")
+                    show("\(Centre.title(worktree)): \(ack.note ?? "failed")")
                 }
             } catch {
                 Haptics.failure()
-                show("\(worktree.name): \(error.localizedDescription)")
+                show("\(Centre.title(worktree)): \(error.localizedDescription)")
             }
         }
     }
@@ -259,7 +267,7 @@ final class AppModel: ObservableObject {
         if sendAgentId != shownAgent?.id,
            let worktree = worktrees.first(where: { $0.agents.contains { $0.id == sendAgentId } }) {
             let done = delivery == .answer ? "answered" : "sent"
-            show("\(worktree.name) · \(ok ? done : (note ?? "\(delivery == .answer ? "answer" : "send") failed"))")
+            show("\(Centre.title(worktree)) · \(ok ? done : (note ?? "\(delivery == .answer ? "answer" : "send") failed"))")
         }
     }
 
@@ -317,7 +325,11 @@ final class AppModel: ObservableObject {
             let beacon = Beacon.pattern(for: fresh)
             // The line names the event that set the beacon: an attention beats a later done.
             let lead = fresh.last(where: { $0.kind == .attention }) ?? fresh.last
-            let line = lead.map { "\($0.worktree) · \($0.kind == .attention ? "needs you" : "done")" }
+            // The banner names the project, like the knob: "orca-deck · done", not "main · done".
+            let line = lead.map { event in
+                let title = response.worktrees.first(where: { $0.id == event.worktreeId }).map(Centre.title) ?? event.worktree
+                return "\(title) · \(event.kind == .attention ? "needs you" : "done")"
+            }
             if relaxed, let lead, caller?.kind != .attention || lead.kind == .attention { caller = lead }
             if beacon != .none, let line {
                 if relaxed && !buzzesInBackground {
@@ -344,8 +356,11 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(_ all: [Worktree]) {
-        allWorktrees = all
-        let list = Selection.visible(all, hideInactive: hideInactive)
+        if all != allWorktrees { allWorktrees = all }
+        // The worktree on screen is kept even when it turns completed: it never vanishes from under the user.
+        let list = Selection.visible(all, hideInactive: hideInactive,
+                                     hideCompletedAfter: hideCompletedAfter > 0 ? hideCompletedAfter : nil,
+                                     nowMs: Date().timeIntervalSince1970 * 1000, keep: selectedId)
         if list != worktrees { worktrees = list }
         if hiddenCount != all.count - list.count { hiddenCount = all.count - list.count }
         if selectedId == nil, let wanted = DebugLaunch.selectRepo,
@@ -426,7 +441,12 @@ final class AppModel: ObservableObject {
     }
 
     private static func describe(_ error: Error) -> String {
-        if case BridgeError.status(let code) = error { return code == 401 ? "wrong token" : "HTTP \(code)" }
+        if case BridgeError.status(let code) = error {
+            if code == 401 { return "wrong token" }
+            // The tunnel answered for a bridge that is not there (Hammerspoon reloaded without it, the Mac asleep).
+            if Routes.isGatewayStatus(code) { return "bridge down (\(code))" }
+            return "HTTP \(code)"
+        }
         if let url = error as? URLError {
             switch url.code {
             case .timedOut: return "timed out"

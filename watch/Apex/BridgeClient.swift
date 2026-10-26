@@ -80,6 +80,8 @@ final class BridgeClient {
         // to the LAN. It may only set the route if nobody changed it meanwhile, or if its route is better.
         let startedWith = answered
         var failure: Error = URLError(.cannotConnectToHost)
+        // A gateway status says the bridge is down behind the tunnel — the most telling failure, kept for the end.
+        var gateway: Error?
         for index in plan.order {
             do {
                 let data = try await attempt(list[index], path: path, query: query, body: body)
@@ -89,9 +91,11 @@ final class BridgeClient {
                 return data
             } catch where Routes.isRouteFailure(error) {
                 failure = error
+            } catch BridgeError.status(let code) where Routes.isGatewayStatus(code) {
+                gateway = BridgeError.status(code)
             }
         }
-        throw failure
+        throw gateway ?? failure
     }
 
     private func attempt(_ base: URL, path: String, query: [URLQueryItem], body: Data?) async throws -> Data {

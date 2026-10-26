@@ -49,16 +49,19 @@ final class ApexUITests: XCTestCase {
         app.buttons.matching(identifier: "worktree-card")
     }
 
+    /// The number of worktrees the cards list holds — its accessibility value, because a LazyVStack only builds
+    /// the cards on screen and a query would count those.
     private func waitForCards(_ app: XCUIApplication) -> Int {
         XCTAssertTrue(cards(app).firstMatch.waitForExistence(timeout: 20), "the cards")
         Thread.sleep(forTimeInterval: 1)
-        return cards(app).count
+        let list = app.descendants(matching: .any)["cards-list"]
+        return Int(list.value as? String ?? "") ?? cards(app).count
     }
 
     /// Acceptance: the crown moves one worktree per detent and wraps past the last one. The simulator ignores
     /// tiny turns; 0.22 of a rotation is one detent there (probed: 0.2–0.3 → one, 0.4 → two).
     func testCrownMovesExactlyOneWorktreePerDetentAndWraps() {
-        let app = launch(["-apexSelectRepo", "orca-deck", "-apex.hideInactive", "NO"])
+        let app = launch(["-apexSelectRepo", "orca-deck", "-apex.hideInactive", "NO", "-apex.hideCompletedAfter", "0"])
         let centre = app.buttons["knob-centre"]
         var (index, count) = waitForWorktrees(centre)
         XCTAssertGreaterThan(count, 2)
@@ -138,7 +141,8 @@ final class ApexUITests: XCTestCase {
 
     /// Feedback 0.3: the cards layout lists the worktrees, the chosen one marked, and the crown scrolls it.
     func testTheCardsLayoutListsTheWorktreesAndScrollsWithTheCrown() {
-        let app = launch(["-apexSelectRepo", "orca-deck", "-apex.layout", "cards", "-apex.hideInactive", "NO"])
+        let app = launch(["-apexSelectRepo", "orca-deck", "-apex.layout", "cards", "-apex.hideInactive", "NO",
+                          "-apex.hideCompletedAfter", "0"])
         XCTAssertGreaterThan(waitForCards(app), 3)
         XCTAssertEqual(cards(app).matching(NSPredicate(format: "value == 'selected'")).count, 1, "one chosen card")
         let first = cards(app).element(boundBy: 0)
@@ -154,7 +158,7 @@ final class ApexUITests: XCTestCase {
 
     /// Feedback 0.3: "Hide inactive" (on by default) drops the worktrees without agents.
     func testHideInactiveDropsTheWorktreesWithoutAgents() {
-        var app = launch(["-apex.layout", "cards", "-apex.hideInactive", "NO"])
+        var app = launch(["-apex.layout", "cards", "-apex.hideInactive", "NO", "-apex.hideCompletedAfter", "0"])
         let all = waitForCards(app)
         app.terminate()
         app = launch(["-apex.layout", "cards"])

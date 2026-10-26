@@ -218,7 +218,7 @@ struct KnobView: View {
         .modifier(DoubleTap(enabled: active))
         .accessibilityIdentifier("knob-centre")
         .accessibilityValue(count > 0 ? "\(model.selected + 1)/\(count)" : "0/0")
-        .accessibilityLabel(model.selectedWorktree.map { "\($0.name), \(Centre.state(model.shownAgent))" } ?? "No worktree")
+        .accessibilityLabel(model.selectedWorktree.map { "\(Centre.title($0)), \(Centre.state(model.shownAgent))" } ?? "No worktree")
         .accessibilityHint("Double tap to show in Orca. Swipe left for the agent, right for Settings.")
     }
 }
@@ -255,7 +255,8 @@ private struct CentreStack: View {
                             insertion: .push(from: direction > 0 ? .bottom : .top),
                             removal: .opacity.combined(with: .scale(scale: 0.92))))
                 } else {
-                    Text(model.connection == .online ? "no workspaces" : "waiting for the bridge…")
+                    Text(model.connection != .online ? "waiting for the bridge…"
+                         : model.hiddenCount > 0 ? "nothing active" : "no workspaces")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
@@ -270,7 +271,7 @@ private struct CentreStack: View {
     private var summary: String {
         if let banner = model.banner { return banner }
         if model.connection != .online { return model.connectionLabel }
-        return Centre.summary(model.worktrees)
+        return Centre.summary(model.allWorktrees)
     }
 
     private var summaryColor: Color {
@@ -294,7 +295,7 @@ private struct WorktreeCard: View {
                                      worktree: worktree, agent: agent, nowMs: nowMs)
         VStack(spacing: 4) {
             StateChip(agent: agent)
-            Text(worktree.name)
+            Text(Centre.title(worktree))
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Theme.ink)
                 .multilineTextAlignment(.center)

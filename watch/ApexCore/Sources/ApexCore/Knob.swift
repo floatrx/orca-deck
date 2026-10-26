@@ -54,10 +54,16 @@ public enum Centre {
         return (agent.state ?? agent.bucket.rawValue).uppercased()
     }
 
-    /// "orca-deck · chat · claude": the repo when it differs from the name, the surface, the agent kind.
+    /// The worktree's big label: its project (the repo) — worktree names repeat ("main" in every repo), so the
+    /// project is what the eye looks for. The worktree's own name when it is the repo's.
+    public static func title(_ worktree: Worktree) -> String {
+        Format.repoSubtitle(worktree) ?? worktree.name
+    }
+
+    /// "main · chat · claude": the worktree (branch) when the title shows the repo, the surface, the agent kind.
     public static func meta(_ worktree: Worktree, agent: Agent?) -> String {
         var parts: [String] = []
-        if let repo = Format.repoSubtitle(worktree) { parts.append(repo) }
+        if Format.repoSubtitle(worktree) != nil { parts.append(worktree.name) }
         if let chat = agent?.chat { parts.append(chat ? "chat" : "terminal") }
         if let kind = agent?.kind, !kind.isEmpty { parts.append(kind) }
         return parts.joined(separator: " · ")
