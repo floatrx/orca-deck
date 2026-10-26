@@ -8,6 +8,10 @@
 #   APEX_WATCH_UDID=<udid> watch/install.sh
 #   APEX_CONFIGURATION=Debug watch/install.sh   # default Release: -O makes SwiftUI's per-frame work several
 #                                               # times cheaper on the watch (Debug is -Onone)
+#   APEX_NO_LAUNCH=1 watch/install.sh           # install only: do not bring Apex to the front (watch/renew.sh)
+#
+# On success it records the installed signature's expiry in ~/.config/orca-deck/apex-signed-until (ISO 8601);
+# watch/renew.sh reads it to decide when to reinstall.
 #
 # The watch must be awake: raise the wrist and keep it unlocked until the hello line appears.
 set -euo pipefail
@@ -50,6 +54,8 @@ for attempt in 1 2 3; do
   (( attempt < 3 )) && { echo "  raise the wrist, unlock the watch — retrying in 10 s"; sleep 10; }
 done
 [[ -n ${installed:-} ]] || { echo "the watch did not take the app — full log: $log"; exit 1; }
+[[ $expires != "?" ]] && print -r -- "$expires" > "$HOME/.config/orca-deck/apex-signed-until"
+[[ -n ${APEX_NO_LAUNCH:-} ]] && { echo "installed (not launched) — signed until $expires"; exit 0; }
 xcrun devicectl device process launch --terminate-existing --device "$watch" com.floatrx.orcadeck.apex >/dev/null
 
 # A watch that just woke can take a minute to reconnect through the iPhone.

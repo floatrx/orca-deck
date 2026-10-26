@@ -152,7 +152,17 @@ through the new LAN address — no reinstall.
 watch/install.sh                   # or: watch/install.sh http://<host>:7353
 ```
 
-A free Personal Team signs for **7 days**: run `watch/install.sh` again each week (it renews the profile).
+A free Personal Team signs for **7 days**, and a rebuild does not renew it — Xcode reuses the cached profile until
+it expires. `watch/renew.sh` handles that: when the watch's signature has under two days left, it retires the cached
+profile (Xcode then makes a fresh 7-day one), builds and installs without bringing Apex to the front, and retries
+every 30 minutes until the watch is awake. A Telegram message says "renewed", or asks you to raise your wrist when
+under a day is left. Install the schedule once:
+
+```bash
+watch/renew-agent.sh install   # LaunchAgent com.floatrx.apex-renew, every 30 min; log ~/Library/Logs/apex-renew.log
+watch/renew-agent.sh status    # and "signed until …"
+```
+
 Settings and the hello line show "signed until …".
 
 Apex opens on the agent calling you — the latest one that needs you — and when a "needs you" came with the
