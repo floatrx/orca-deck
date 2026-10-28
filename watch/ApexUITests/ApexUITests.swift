@@ -3,7 +3,7 @@ import XCTest
 /// Acceptance tests of .work/plans/apex-v2.md on the watchOS simulator, against the running bridge
 /// (`watch/configure.sh http://localhost:7353` before the run). Environment (xcodebuild `TEST_RUNNER_` prefix):
 /// - `APEX_SCRATCH_SESSION` — a scratch chat session with a long last message and a pending Next: the crown
-///   scrolls its message (Send has no undo window since 2026-10-28, so no test presses it);
+///   scrolls its message (Send goes at once since 2026-10-28, so no test presses it);
 /// - `APEX_TAP_SESSION` — the session the tap test reveals in Orca. Leave it unset unless that pane is already
 ///   on the Mac's screen: the tap switches Orca's active worktree.
 /// No other session is ever targeted. A launch argument (`-apex.layout cards`) picks a setting for one run.
@@ -184,24 +184,7 @@ final class ApexUITests: XCTestCase {
         XCTAssertTrue(app.buttons["knob-centre"].waitForExistence(timeout: 5), "back to the knob")
     }
 
-    /// Questions: Undo within 3 s answers nothing (the runner checks the trail has no `answer`). Needs the scratch
-    /// session to have a pending question. Named so it runs before the test that answers.
-    func testAnswerUndoWithinThreeSecondsAnswersNothing() throws {
-        let session = try session("APEX_QUESTION_SESSION")
-        let app = launch(["-apexPage", "1", "-apexSelectRepo", "orca-deck", "-apexPickAgent", session])
-        let options = app.buttons.matching(identifier: "answer-option")
-        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 20), "the question's options")
-        XCTAssertFalse(app.buttons["send-button"].exists, "no Send while a question is pending")
-        options.element(boundBy: 0).tap()
-        let undo = app.buttons["undo-button"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 3), "the answer countdown")
-        undo.tap()
-        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 3), "Undo brings the options back")
-        Thread.sleep(forTimeInterval: 5)  // well past the 3 s window
-        XCTAssertTrue(options.firstMatch.exists, "still not answered")
-    }
-
-    /// Questions: a tap on an option answers the scratch session's question once the countdown runs out.
+    /// Questions: a tap on an option answers the scratch session's question at once.
     func testAnswerWithAnOptionTap() throws {
         let session = try session("APEX_QUESTION_SESSION")
         let app = launch(["-apexPage", "1", "-apexSelectRepo", "orca-deck", "-apexPickAgent", session])

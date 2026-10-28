@@ -4,7 +4,7 @@ import SwiftUI
 /// Page 1 — the chosen worktree's agent: a header pinned where the system clock would be (the app hides it),
 /// its full last message (scrolls with the crown), and the Next card pinned at the bottom — the page's goal,
 /// so Send never needs a scroll; a tick per Next variant under the message, the recommended one ticked. A send
-/// waits a short undo window before the prompt goes to the agent. The background glows in the agent's
+/// goes to the agent at once. The background glows in the agent's
 /// colour, like the knob.
 struct AgentView: View {
     @ObservedObject var model: AppModel
@@ -83,12 +83,10 @@ struct AgentView: View {
 
     private static let ticksAnchor = "next-ticks"
 
-    /// The ticks are shown while there are variants and no send of this agent counts down or runs.
+    /// The ticks are shown while there are variants and no send of this agent runs.
     private func showsTicks(_ agent: Agent) -> Bool {
-        switch sendState(for: agent) {
-        case .countdown, .sending: return false
-        default: return !variants.isEmpty
-        }
+        if case .sending = sendState(for: agent) { return false }
+        return !variants.isEmpty
     }
 
     /// The Next variants — none while a question is pending: they belong to the previous turn.
@@ -113,13 +111,13 @@ struct AgentView: View {
         .buttonStyle(Capsule40(fill: Color.white.opacity(0.14), foreground: Theme.ink))
     }
 
-    /// The question and one button per option; a tap counts down an answer (Undo, like Send). While the answer
-    /// counts down or runs, the chosen option replaces the list and the control is pinned at the bottom.
+    /// The question and one button per option; a tap answers at once. While the answer runs, the chosen option
+    /// replaces the list and the progress is pinned at the bottom.
     private func questionPage(_ question: AgentQuestion, _ agent: Agent) -> some View {
         let state = sendState(for: agent)
         let chosen: String? = {
             switch state {
-            case .countdown(let text, _), .sending(let text, _, _): return text
+            case .sending(let text, _, _): return text
             default: return nil
             }
         }()
@@ -169,7 +167,7 @@ struct AgentView: View {
             .focused($focused)
             .accessibilityIdentifier("agent-page")
             if chosen != nil {
-                pinnedCard { sendControl(text: chosen ?? "", state: state) }
+                pinnedCard { sendingRow }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -269,12 +267,12 @@ struct AgentView: View {
 
     /// Send for the ticked Next variants (the ticks sit under the message) — often more than one is wanted. The
     /// first variant is the agent's recommendation: ticked from the start, so one tap on Send still sends it.
-    /// While a send counts down or runs, the card shows the text that is being sent.
+    /// While a send runs, the card shows the text that is being sent.
     private func nextCard(_ agent: Agent) -> some View {
         let state = sendState(for: agent)
         let locked: String? = {
             switch state {
-            case .countdown(let text, _), .sending(let text, _, _): return text
+            case .sending(let text, _, _): return text
             default: return nil
             }
         }()
@@ -285,7 +283,7 @@ struct AgentView: View {
                     .foregroundStyle(Theme.ink)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                sendControl(text: locked, state: state)
+                sendingRow
             } else if variants.isEmpty {
                 outcome(state)
             } else {
@@ -373,53 +371,20 @@ struct AgentView: View {
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
         case .failed(let note):
             Text(note).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2)
-        case .idle, .countdown, .sending:
+        case .idle, .sending:
             Label("No Next", systemImage: "arrow.right.circle")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.muted)
         }
     }
 
-    @ViewBuilder
-    private func sendControl(text: String, state: AppModel.SendState) -> some View {
-        switch state {
-        case .countdown(_, let seconds):
-            Button {
-                model.undoSend()
-            } label: {
-                Text("\(model.delivery == .answer ? "Answering" : "Sending") in \(seconds) · Undo")
-                    .contentTransition(.numericText(countsDown: true))
-            }
-            .accessibilityIdentifier("undo-button")
-            .buttonStyle(Capsule40(fill: Theme.attention.opacity(0.22), foreground: Theme.attention,
-                                   progress: Double(seconds - 1) / Double(AppModel.undoSeconds)))
-            .animation(.linear(duration: 1), value: seconds)
-        case .sending:
-            HStack(spacing: 6) {
-                ProgressView().frame(width: 14, height: 14)
-                Text(model.delivery == .answer ? "Answering…" : "Sending…").font(.system(size: 12)).foregroundStyle(Theme.muted)
-            }
-            .frame(maxWidth: .infinity, minHeight: 40)
-        case .idle, .sent, .failed:
-            VStack(spacing: 4) {
-                if state == .sent {
-                    Label(model.delivery == .answer ? "Answered" : "Sent", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.done)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                }
-                if case .failed(let note) = state {
-                    Text(note).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
-                }
-                Button {
-                    model.send(text)
-                } label: {
-                    Label("Send", systemImage: "paperplane.fill")
-                }
-                .buttonStyle(Capsule40(fill: Theme.attention, foreground: .white))
-                .accessibilityIdentifier("send-button")
-            }
+    /// A delivery on its way: the bridge's outcome settles it.
+    private var sendingRow: some View {
+        HStack(spacing: 6) {
+            ProgressView().frame(width: 14, height: 14)
+            Text(model.delivery == .answer ? "Answering…" : "Sending…").font(.system(size: 12)).foregroundStyle(Theme.muted)
         }
+        .frame(maxWidth: .infinity, minHeight: 40)
     }
 }
 
@@ -485,30 +450,16 @@ private struct VariantStyle: ButtonStyle {
 }
 
 /// A full-width 40 pt capsule: watchOS's default button is ~60 pt tall, which leaves the message one line.
-/// `progress` (0…1) draws a fill that drains — the undo countdown.
 private struct Capsule40: ButtonStyle {
     let fill: Color
     let foreground: Color
-    var progress: Double? = nil
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(foreground)
             .frame(maxWidth: .infinity, minHeight: 40)
-            .background(
-                ZStack(alignment: .leading) {
-                    Capsule().fill(fill)
-                    if let progress {
-                        GeometryReader { geometry in
-                            Capsule()
-                                .fill(foreground.opacity(0.28))
-                                .frame(width: geometry.size.width * max(0, min(1, progress)))
-                        }
-                    }
-                }
-            )
-            .clipShape(Capsule())
+            .background(Capsule().fill(fill))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
             .contentShape(Capsule())

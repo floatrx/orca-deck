@@ -56,7 +56,7 @@ targets:
               NSExceptionAllowsInsecureHTTPLoads: true
         WKBackgroundModes:
           - mindfulness
-  # UI tests on the watchOS simulator: crown detents, swipes, tap → go, Send/Undo (acceptance of apex-v2).
+  # UI tests on the watchOS simulator: crown detents, swipes, tap → go, answer tap (acceptance of apex-v2).
   ApexUITests:
     type: bundle.ui-testing
     platform: watchOS

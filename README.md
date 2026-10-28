@@ -111,7 +111,7 @@ own `agentSession.send` (`bridge/agent.cjs`): no key presses, Orca's focus stays
 § Agent screen.
 
 When the agent **asks a question** (an AskUserQuestion with options), the agent page shows the question and one
-button per option instead of the Next card: a tap counts down 3 s (Undo), then answers it through Orca's own
+button per option instead of the Next card: a tap answers it at once through Orca's own
 `agentSession.respondToQuestion` — Orca shows it answered and the agent continues. The stale Next and Send are
 hidden while the question waits. Multi-select, several questions or free text: "Answer in Orca".
 

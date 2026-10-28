@@ -4,7 +4,7 @@ import WatchKit
 
 /// Polls the bridge about once a second (protocol.md: no long-poll), keeps the crown's selection on its
 /// worktree, pulses for new events, focuses worktrees in Orca, and — for the agent page — fetches the
-/// agent's full message, sends Next prompts at once and answers questions after a short undo window.
+/// agent's full message, and sends Next prompts and question answers at once.
 @MainActor
 final class AppModel: ObservableObject {
     enum Connection: Equatable {
@@ -14,11 +14,10 @@ final class AppModel: ObservableObject {
         case outdated(Int)
     }
 
-    /// A delivery's life: a countdown the user can undo (answers only), then the bridge's outcome. It belongs to the
+    /// A delivery's life: sending at once on the tap, then the bridge's outcome. It belongs to the
     /// agent in `sendAgentId`; the agent page shows it only for that agent.
     enum SendState: Equatable {
         case idle
-        case countdown(text: String, seconds: Int)
         /// `previous` is the bridge's last `send.at` before this send — a different one is this send's outcome.
         case sending(text: String, previous: Double?, startedAt: Date)
         case sent
@@ -65,7 +64,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var sendState: SendState = .idle
     /// The agent the current send belongs to — captured when Send was tapped.
     @Published private(set) var sendAgentId: String?
-    /// What the countdown delivers: a prompt (Send) or an answer to the agent's question (an option tap).
+    /// What the delivery is: a prompt (Send) or an answer to the agent's question (an option tap).
     enum Delivery: Equatable { case say, answer }
     @Published private(set) var delivery: Delivery = .say
 
@@ -108,7 +107,6 @@ final class AppModel: ObservableObject {
     private static let detailInterval: TimeInterval = 2
     /// A send with no outcome after this long is reported as failed instead of spinning forever.
     private static let sendDeadline: TimeInterval = 25
-    static let undoSeconds = 3
 
     init(client: BridgeClient) {
         self.client = client
@@ -193,38 +191,30 @@ final class AppModel: ObservableObject {
 
     // MARK: - Agent page
 
-    /// Send: `text` goes to the shown agent at once (user, 2026-10-28: the wait was friction — ticking the
-    /// variants and then pressing Send is already the confirmation).
+    /// Send: `text` goes to the shown agent at once.
     func send(_ text: String) {
         guard let agent = shownAgent else { return }
-        WKInterfaceDevice.current().play(.click)
         deliver(text, as: .say, to: agent, previous: detail?.id == agent.id ? detail?.send?.at : nil,
-                command: .say(agent.id, text), countdown: 0)
+                command: .say(agent.id, text))
     }
 
-    /// An option tap: count down `undoSeconds`, then answer the shown agent's question with that option — one
-    /// tap with no confirmation, so it keeps the undo window. Undo, or turning to another agent, cancels it.
+    /// An option tap: answers the shown agent's question with that option at once.
     func answer(_ option: AgentQuestion.Option, to question: AgentQuestion) {
         guard let agent = shownAgent else { return }
         deliver(option.label, as: .answer, to: agent, previous: detail?.id == agent.id ? detail?.answer?.at : nil,
-                command: .answer(agent.id, question, option: option), countdown: Self.undoSeconds)
+                command: .answer(agent.id, question, option: option))
     }
 
-    /// `countdown` seconds (none for 0), then `command` to the agent captured now, even if the user turns away;
-    /// `text` is what the card shows meanwhile. The bridge's record of the delivery (`send` or `answer` in
-    /// AgentDetail) settles it (checkSend).
-    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command,
-                         countdown: Int) {
+    /// `command` to the agent captured now, at once — no undo window (user, 2026-10-28: the 3 s wait was
+    /// friction). `text` is what the card shows meanwhile. The bridge's record of the delivery (`send` or
+    /// `answer` in AgentDetail) settles it (checkSend).
+    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command) {
         guard sendTask == nil else { return }
         if case .sending = sendState { return }
         sendAgentId = agent.id
         delivery = kind
+        WKInterfaceDevice.current().play(.click)
         sendTask = Task {
-            for remaining in stride(from: countdown, to: 0, by: -1) {
-                sendState = .countdown(text: text, seconds: remaining)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if Task.isCancelled { return }
-            }
             sendState = .sending(text: text, previous: previous, startedAt: Date())
             do {
                 let ack = try await client.send(command)
@@ -234,17 +224,6 @@ final class AppModel: ObservableObject {
             }
             sendTask = nil
         }
-    }
-
-    func undoSend() {
-        cancelCountdown()
-        WKInterfaceDevice.current().play(.directionDown)
-    }
-
-    private func cancelCountdown() {
-        sendTask?.cancel()
-        sendTask = nil
-        sendState = .idle
     }
 
     /// Settles a running send from the bridge's record for the send's own agent (not the shown one), or
@@ -283,14 +262,6 @@ final class AppModel: ObservableObject {
         detailFetchedAt = Date()
         guard let fetched = try? await client.agent(id: agent.id), fetched.id == shownAgent?.id else { return }
         if fetched != detail { detail = fetched }
-        if DebugLaunch.demo == "countdown", sendState == .idle {
-            // Only an answer counts down; a Send goes at once.
-            if let option = fetched.question?.options.first {
-                sendAgentId = fetched.id
-                delivery = .answer
-                sendState = .countdown(text: option.label, seconds: Self.undoSeconds)
-            }
-        }
         // DEBUG end-to-end test: only for the exact session given by -apexPickAgent.
         if DebugLaunch.demo == "send", !demoSent, let session = DebugLaunch.pickAgent,
            fetched.id.hasPrefix("structured-agent-session-\(session):"), let first = fetched.next.first {
@@ -301,8 +272,6 @@ final class AppModel: ObservableObject {
 
     private func resetAgentPage() {
         switch sendState {
-        case .countdown:
-            if sendAgentId != shownAgent?.id { cancelCountdown() }
         case .sent, .failed:
             sendState = .idle
         case .idle, .sending:
