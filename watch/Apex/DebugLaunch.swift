@@ -5,11 +5,15 @@ import Foundation
 /// - `-apexPage 1` opens the agent page.
 /// - `-apexSelectRepo <repo or name>` starts on that worktree instead of Orca's active one.
 /// - `-apexDemo countdown` shows the Send button's undo countdown without sending anything.
+/// - `-apexDemo variants` shows three sample Next variants on the agent page (nothing is sent unless tapped).
 /// - `-apexPickAgent <session id>` shows that agent of its worktree (the long-press choice).
 /// - `-apexCornerOffset <pt>` adds points to the knob track's corner radii — renders corner variants to compare.
 /// - `-apexDemo send` presses Send on the first Next variant — only when the shown agent's id is exactly that
 ///   session (`structured-agent-session-<session id>:…`): an end-to-end test for the scratch session only.
 enum DebugLaunch {
+    static let demoVariants = ["commit and push", "run the e2e suite before committing",
+                               "switch to the sandbox setup from todo.md"]
+
     #if DEBUG
     private static func value(_ name: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments

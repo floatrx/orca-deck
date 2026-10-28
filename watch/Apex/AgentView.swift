@@ -3,15 +3,15 @@ import SwiftUI
 
 /// Page 1 — the chosen worktree's agent: a header pinned where the system clock would be (the app hides it),
 /// its full last message (scrolls with the crown), and the Next card pinned at the bottom — the page's goal,
-/// so Send never needs a scroll. Send waits a short undo window before the prompt goes to the agent. The
-/// background glows in the agent's colour, like the knob.
+/// so Send never needs a scroll: one button per Next variant, the recommended one first and filled. A send
+/// waits a short undo window before the prompt goes to the agent. The background glows in the agent's
+/// colour, like the knob.
 struct AgentView: View {
     @ObservedObject var model: AppModel
     /// This page is on screen — only then does its scroll view own the crown and the glow animate.
     let active: Bool
 
     @Environment(\.isLuminanceReduced) private var dimmed
-    @State private var chosen = 0
     /// The Next card's bottom corners, concentric with the display's (ConcentricRadius).
     @State private var cardBottomRadius: CGFloat = 32
     @FocusState private var focused: Bool
@@ -51,7 +51,6 @@ struct AgentView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 6)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
-                .onChange(of: agent.id) { _, _ in chosen = 0 }
             } else {
                 Text("No agent here")
                     .font(.footnote)
@@ -64,6 +63,7 @@ struct AgentView: View {
 
     /// The Next variants — none while a question is pending: they belong to the previous turn.
     private var variants: [String] {
+        if DebugLaunch.demo == "variants" { return DebugLaunch.demoVariants }
         guard let detail = model.detail, detail.id == model.shownAgent?.id, detail.question == nil else { return [] }
         return detail.next
     }
@@ -237,8 +237,9 @@ struct AgentView: View {
         model.sendAgentId == agent.id ? model.sendState : .idle
     }
 
-    /// The chosen Next variant (a tap cycles through the variants) and the Send control. While a send counts
-    /// down or runs, the card shows the text that is being sent and the variants cannot change.
+    /// Every Next variant as a button — a tap counts down a send (Undo), like an answer option. The first variant
+    /// is the recommended one (the agent puts it first) and is filled; the others are quiet. While a send counts
+    /// down or runs, the card shows only the text that is being sent and its control.
     private func nextCard(_ agent: Agent) -> some View {
         let state = sendState(for: agent)
         let locked: String? = {
@@ -247,43 +248,53 @@ struct AgentView: View {
             default: return nil
             }
         }()
-        let index = min(chosen, max(variants.count - 1, 0))
-        let text = locked ?? (variants.isEmpty ? nil : variants[index])
         return VStack(alignment: .leading, spacing: 5) {
-            if let text {
-                Button {
-                    chosen = (index + 1) % max(variants.count, 1)
-                } label: {
-                    HStack(alignment: .top, spacing: 5) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.attention)
-                        Text(text)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.ink)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentTransition(.opacity)
-                        if variants.count > 1 && locked == nil {
-                            Text("\(index + 1)/\(variants.count)")
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Theme.muted)
-                                .contentTransition(.numericText())
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(locked != nil)
-                .animation(.snappy, value: chosen)
-                .accessibilityHint(variants.count > 1 && locked == nil ? "Tap for the next variant" : "")
-                sendControl(text: text, state: state)
-            } else {
+            if let locked {
+                Label(locked, systemImage: "arrow.right.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                sendControl(text: locked, state: state)
+            } else if variants.isEmpty {
                 outcome(state)
+            } else {
+                if state == .sent {
+                    Label(model.delivery == .answer ? "Answered" : "Sent", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.done)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+                if case .failed(let note) = state {
+                    Text(note).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
+                }
+                variantList
             }
         }
         .modifier(PinnedCardFrame(bottomRadius: $cardBottomRadius))
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: state)
+    }
+
+    /// The variant buttons. Up to three fit under the message; more scroll inside the card.
+    @ViewBuilder
+    private var variantList: some View {
+        let list = VStack(spacing: 4) {
+            ForEach(Array(variants.enumerated()), id: \.offset) { index, variant in
+                Button {
+                    model.send(variant)
+                } label: {
+                    Label(variant, systemImage: index == 0 ? "paperplane.fill" : "arrow.right")
+                }
+                .buttonStyle(VariantStyle(recommended: index == 0))
+                // The recommended variant is the page's primary Send.
+                .accessibilityIdentifier(index == 0 ? "send-button" : "next-variant")
+            }
+        }
+        if variants.count > 3 {
+            ScrollView { list }.frame(maxHeight: 128)
+        } else {
+            list
+        }
     }
 
     /// A card pinned at the bottom of the page, its bottom corners concentric with the display's.
@@ -385,6 +396,28 @@ private struct OptionStyle: ButtonStyle {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.attention.opacity(0.24)))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A Next variant: full width, two lines of label. The recommended one is filled like Send, white on the
+/// attention colour; the others are a quiet tint.
+private struct VariantStyle: ButtonStyle {
+    let recommended: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: recommended ? .semibold : .regular))
+            .foregroundStyle(recommended ? Color.white : Theme.ink)
+            .multilineTextAlignment(.leading)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(recommended ? Theme.attention : Color.white.opacity(0.12)))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
