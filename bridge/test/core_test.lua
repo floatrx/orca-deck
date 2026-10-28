@@ -282,6 +282,15 @@ test("parseVariants keeps the non-empty trimmed lines, at most 5", function()
   eq(#core.parseVariants("a\nb\nc\nd\ne\nf\ng"), 5)
 end)
 
+test("usesVariants: one variant verbatim, or a numbered list that carries some", function()
+  local v = { "commit it", "run e2e" }
+  eq(core.usesVariants("commit it", v), true)
+  eq(core.usesVariants("1. commit it\n2. run e2e", v), true)
+  eq(core.usesVariants("something else", v), false)
+  eq(core.usesVariants("commit it", {}), false)
+  eq(core.usesVariants(nil, v), false)
+end)
+
 test("stripNextLines removes the trailing run of Next lines", function()
   local m = "Done.\n\nNext: `commit it`\n\nNext: `run e2e`\n"
   eq(core.stripNextLines(m), "Done.")

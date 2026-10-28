@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Page 1 — the chosen worktree's agent: a header pinned where the system clock would be (the app hides it),
 /// its full last message (scrolls with the crown), and the Next card pinned at the bottom — the page's goal,
-/// so Send never needs a scroll: one button per Next variant, the recommended one first and filled. A send
+/// so Send never needs a scroll; a tick per Next variant under the message, the recommended one ticked. A send
 /// waits a short undo window before the prompt goes to the agent. The background glows in the agent's
 /// colour, like the knob.
 struct AgentView: View {
@@ -12,6 +12,8 @@ struct AgentView: View {
     let active: Bool
 
     @Environment(\.isLuminanceReduced) private var dimmed
+    /// The ticked Next variants (indices); the recommended first one is ticked whenever the variants change.
+    @State private var picked: Set<Int> = DebugLaunch.pickVariants ?? [0]
     /// The Next card's bottom corners, concentric with the display's (ConcentricRadius).
     @State private var cardBottomRadius: CGFloat = 32
     @FocusState private var focused: Bool
@@ -34,10 +36,26 @@ struct AgentView: View {
                         // belong to the previous turn — no Next card, no Send.
                         questionPage(question, agent)
                     } else {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 8) {
-                                messageCard(worktree, agent)
-                                showInOrca
+                        // The ticks follow the message inside the scroll, like a question's options: three
+                        // two-line variants pinned at the bottom left the message one line. The page opens
+                        // scrolled to them; the crown goes up to read the message.
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    messageCard(worktree, agent)
+                                    if showsTicks(agent) {
+                                        variantList.id(Self.ticksAnchor)
+                                    }
+                                    showInOrca
+                                }
+                            }
+                            // Opened scrolled, the message would draw over the header without a clip.
+                            .clipped()
+                            .onAppear { proxy.scrollTo(Self.ticksAnchor, anchor: .bottom) }
+                            .onChange(of: variants) { _, _ in
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    proxy.scrollTo(Self.ticksAnchor, anchor: .bottom)
+                                }
                             }
                         }
                         .focused($focused)
@@ -51,6 +69,8 @@ struct AgentView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 6)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
+                .onChange(of: agent.id) { _, _ in picked = [0] }
+                .onChange(of: variants) { _, _ in picked = [0] }
             } else {
                 Text("No agent here")
                     .font(.footnote)
@@ -59,6 +79,16 @@ struct AgentView: View {
         }
         .onChange(of: active) { _, isActive in focused = isActive }
         .onAppear { focused = active }
+    }
+
+    private static let ticksAnchor = "next-ticks"
+
+    /// The ticks are shown while there are variants and no send of this agent counts down or runs.
+    private func showsTicks(_ agent: Agent) -> Bool {
+        switch sendState(for: agent) {
+        case .countdown, .sending: return false
+        default: return !variants.isEmpty
+        }
     }
 
     /// The Next variants — none while a question is pending: they belong to the previous turn.
@@ -237,9 +267,9 @@ struct AgentView: View {
         model.sendAgentId == agent.id ? model.sendState : .idle
     }
 
-    /// Every Next variant as a button — a tap counts down a send (Undo), like an answer option. The first variant
-    /// is the recommended one (the agent puts it first) and is filled; the others are quiet. While a send counts
-    /// down or runs, the card shows only the text that is being sent and its control.
+    /// Send for the ticked Next variants (the ticks sit under the message) — often more than one is wanted. The
+    /// first variant is the agent's recommendation: ticked from the start, so one tap on Send still sends it.
+    /// While a send counts down or runs, the card shows the text that is being sent.
     private func nextCard(_ agent: Agent) -> some View {
         let state = sendState(for: agent)
         let locked: String? = {
@@ -253,7 +283,7 @@ struct AgentView: View {
                 Label(locked, systemImage: "arrow.right.circle.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.ink)
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 sendControl(text: locked, state: state)
             } else if variants.isEmpty {
@@ -268,33 +298,62 @@ struct AgentView: View {
                 if case .failed(let note) = state {
                     Text(note).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
                 }
-                variantList
+                sendPicked
             }
         }
         .modifier(PinnedCardFrame(bottomRadius: $cardBottomRadius))
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: state)
     }
 
-    /// The variant buttons. Up to three fit under the message; more scroll inside the card.
-    @ViewBuilder
+    /// The variant rows under the message; a tap ticks or unticks one.
     private var variantList: some View {
-        let list = VStack(spacing: 4) {
+        VStack(spacing: 4) {
             ForEach(Array(variants.enumerated()), id: \.offset) { index, variant in
+                let ticked = picked.contains(index)
                 Button {
-                    model.send(variant)
+                    if ticked { picked.remove(index) } else { picked.insert(index) }
                 } label: {
-                    Label(variant, systemImage: index == 0 ? "paperplane.fill" : "arrow.right")
+                    HStack(alignment: .center, spacing: 6) {
+                        Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 14))
+                            .foregroundStyle(ticked ? Theme.attention : Theme.muted)
+                            .contentTransition(.symbolEffect(.replace))
+                        Text(variant)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if index == 0 {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.attention)
+                                .accessibilityLabel("Recommended")
+                        }
+                    }
                 }
-                .buttonStyle(VariantStyle(recommended: index == 0))
-                // The recommended variant is the page's primary Send.
-                .accessibilityIdentifier(index == 0 ? "send-button" : "next-variant")
+                .buttonStyle(VariantStyle(ticked: ticked, recommended: index == 0))
+                .accessibilityIdentifier("next-variant")
+                .accessibilityValue(ticked ? "ticked" : "")
             }
         }
-        if variants.count > 3 {
-            ScrollView { list }.frame(maxHeight: 128)
-        } else {
-            list
+        .animation(.snappy(duration: 0.2), value: picked)
+    }
+
+    /// Send for the ticked variants: one goes verbatim, several as a numbered list (NextPrompt).
+    private var sendPicked: some View {
+        let text = NextPrompt.compose(variants, picked: picked)
+        return Button {
+            if let text { model.send(text) }
+        } label: {
+            if text == nil {
+                Text("Tick a variant")
+            } else {
+                Label(picked.count > 1 ? "Send \(picked.count)" : "Send", systemImage: "paperplane.fill")
+                    .contentTransition(.numericText())
+            }
         }
+        .disabled(text == nil)
+        .buttonStyle(Capsule40(fill: text == nil ? Color.white.opacity(0.10) : Theme.attention,
+                               foreground: text == nil ? Theme.muted : .white))
+        .animation(.snappy, value: picked.count)
+        .accessibilityIdentifier("send-button")
     }
 
     /// A card pinned at the bottom of the page, its bottom corners concentric with the display's.
@@ -402,25 +461,26 @@ private struct OptionStyle: ButtonStyle {
     }
 }
 
-/// A Next variant: full width, two lines of label. The recommended one is filled like Send, white on the
-/// attention colour; the others are a quiet tint.
+/// A Next variant row: full width, two lines of label. A ticked row is tinted in the attention colour, an unticked
+/// one is quiet; the recommended row's label is semibold.
 private struct VariantStyle: ButtonStyle {
+    let ticked: Bool
     let recommended: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: recommended ? .semibold : .regular))
-            .foregroundStyle(recommended ? Color.white : Theme.ink)
+            .foregroundStyle(ticked ? Theme.ink : Theme.detail)
             .multilineTextAlignment(.leading)
             .lineLimit(2)
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(recommended ? Theme.attention : Color.white.opacity(0.12)))
+            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ticked ? Theme.attention.opacity(0.26) : Color.white.opacity(0.08)))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

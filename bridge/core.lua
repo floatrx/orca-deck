@@ -183,6 +183,16 @@ function core.parseVariants(text)
   return variants
 end
 
+--- Whether a sent text used the pending variants: it is one of them, or carries one (the watch sends several
+--- ticked variants as a numbered list). Then the variants are spent, like after Orca's →.
+function core.usesVariants(text, variants)
+  if type(text) ~= "string" then return false end
+  for _, variant in ipairs(variants or {}) do
+    if text == variant or text:find(variant, 1, true) then return true end
+  end
+  return false
+end
+
 --- The message without its trailing run of "Next: `…`" lines (blank lines between them allowed) —
 --- the same run the Stop hook (~/.claude/hooks/next-prefill.sh) turns into variants.
 function core.stripNextLines(message)

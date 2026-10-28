@@ -1,6 +1,6 @@
 --- orca-deck bridge — protocol v1 (../protocol.md is the contract). Streams Orca's worktree and agent
 --- state to clients and turns their commands into Orca's own key presses and RPCs.
---- Not loaded by init.lua — a Hammerspoon config reload drops it.
+--- Autoloaded by ~/.hammerspoon/init.lua (guarded dofile); after editing, reload it with the line below.
 ---
 --- Grown from a snapshot of the spike bridge (owned by another session; never edit the original):
 ---   /Users/floatrx/orca/workspaces/generic/nursehound/spike/orca-deck/  copied 2026-10-22 22:31
@@ -38,7 +38,7 @@ local CONFIG = CONFIG_DIR .. "/bridge.json"
 --- agent.cjs reads a chat session's history and sends prompts through Orca's runtime RPCs.
 local AGENT_SCRIPT = DIR .. "agent.cjs"
 --- The Next variants the Stop hook (~/.claude/hooks/next-prefill.sh) queues per chat session;
---- Hammerspoon's → deletes a file when it inserts its text, and so does a successful `say`.
+--- Hammerspoon's → deletes a file when it inserts its text, and so does a successful `say` that used one.
 local PENDING_DIR = os.getenv("HOME") .. "/.claude/hooks/next-pending/"
 --- How long a fetched full message stays fresh for GET /api/agent.
 local DETAIL_TTL_SECONDS = 3
@@ -407,9 +407,7 @@ local function say(message)
     if result and result.sent then
       deckBridge.sends[agent.id] = { at = at, ok = true }
       local pending = PENDING_DIR .. sessionId
-      for _, variant in ipairs(core.parseVariants(readFile(pending))) do
-        if variant == text then os.remove(pending) break end
-      end
+      if core.usesVariants(text, core.parseVariants(readFile(pending))) then os.remove(pending) end
       trail(string.format("say %s (%d chars) → sent in %d ms", sessionId, utf8.len(text) or #text, math.floor((hs.timer.secondsSinceEpoch() - started) * 1000)))
       later(REPOLL_SECONDS, poll)
     else

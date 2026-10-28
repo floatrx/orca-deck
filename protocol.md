@@ -228,8 +228,9 @@ Client loop:
 - Refused at once with a note: no text, unknown agent, a terminal agent, Orca not running — and **over the
   WebSocket**: `say` needs the bearer token (`POST /api/cmd`), because any web page can open
   `ws://localhost:7352/ws` and the agents run with bypassed permissions.
-- When the sent text equals a pending Next variant, the bridge deletes that pending file — the same thing
-  Hammerspoon does when → inserts it, so the Mac does not offer a used Next again.
+- When the sent text equals a pending Next variant, or carries one (the watch sends several ticked variants
+  as a numbered list, `1. …\n2. …`), the bridge deletes that pending file — the same thing Hammerspoon does
+  when → inserts it, so the Mac does not offer a used Next again.
 - The trail records `say <session> (<n> chars) → sent in <ms> ms | failed: <reason>` — never the text.
 
 ### answer — `POST /api/cmd {cmd:"answer", id, itemId, revision, optionId}`
