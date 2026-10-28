@@ -62,6 +62,8 @@ final class AppModel: ObservableObject {
     /// The shown agent's detail while the agent page is visible.
     @Published private(set) var detail: AgentDetail?
     @Published private(set) var sendState: SendState = .idle
+    /// Grows by one each time the main page is wanted on screen (after a send or an answer); ContentView pages.
+    @Published private(set) var homeRequest = 0
     /// The agent the current send belongs to — captured when Send was tapped.
     @Published private(set) var sendAgentId: String?
     /// What the delivery is: a prompt (Send) or an answer to the agent's question (an option tap).
@@ -82,7 +84,17 @@ final class AppModel: ObservableObject {
     var buzzesInBackground = false
     /// The agent page is on screen: fetch the shown agent's detail every few seconds.
     var agentPageVisible = false {
-        didSet { if agentPageVisible && !oldValue { Task { await refreshDetail() } } }
+        didSet {
+            guard agentPageVisible && !oldValue else { return }
+            Task { await refreshDetail() }
+            // DEBUG: the after-send return without a send, for the UI test.
+            if DebugLaunch.demo == "home", let id = shownAgent?.id {
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    goHome(after: id)
+                }
+            }
+        }
     }
 
     private let client: BridgeClient
@@ -193,24 +205,43 @@ final class AppModel: ObservableObject {
 
     /// Send: `text` goes to the shown agent at once.
     func send(_ text: String) {
-        guard let agent = shownAgent else { return }
-        deliver(text, as: .say, to: agent, previous: detail?.id == agent.id ? detail?.send?.at : nil,
-                command: .say(agent.id, text))
+        guard let agent = shownAgent,
+              deliver(text, as: .say, to: agent, previous: detail?.id == agent.id ? detail?.send?.at : nil,
+                      command: .say(agent.id, text)) else { return }
+        goHome(after: agent.id)
     }
 
     /// An option tap: answers the shown agent's question with that option at once.
     func answer(_ option: AgentQuestion.Option, to question: AgentQuestion) {
-        guard let agent = shownAgent else { return }
-        deliver(option.label, as: .answer, to: agent, previous: detail?.id == agent.id ? detail?.answer?.at : nil,
-                command: .answer(agent.id, question, option: option))
+        guard let agent = shownAgent,
+              deliver(option.label, as: .answer, to: agent, previous: detail?.id == agent.id ? detail?.answer?.at : nil,
+                      command: .answer(agent.id, question, option: option)) else { return }
+        goHome(after: agent.id)
+    }
+
+    /// After a send or an answer: back to the main page, turned to the next agent waiting on the user (user,
+    /// 2026-10-28). Without one the knob stays on the agent just sent to — it works now, so the next done
+    /// follows it (poll). A failed send then shows on the main page's banner (settle).
+    private func goHome(after agentId: String) {
+        if let next = Selection.nextWaiting(after: selected, in: worktrees, excluding: agentId) {
+            turn(to: next.index, agent: next.agentId)
+        }
+        homeRequest += 1
+    }
+
+    /// Selects worktree `index` showing `agentId`.
+    private func turn(to index: Int, agent agentId: String) {
+        picked[worktrees[index].id] = agentId
+        if index == selected { resetAgentPage() } else { select(index) }
     }
 
     /// `command` to the agent captured now, at once — no undo window (user, 2026-10-28: the 3 s wait was
     /// friction). `text` is what the card shows meanwhile. The bridge's record of the delivery (`send` or
-    /// `answer` in AgentDetail) settles it (checkSend).
-    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command) {
-        guard sendTask == nil else { return }
-        if case .sending = sendState { return }
+    /// `answer` in AgentDetail) settles it (checkSend). False when another delivery still runs.
+    @discardableResult
+    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command) -> Bool {
+        guard sendTask == nil else { return false }
+        if case .sending = sendState { return false }
         sendAgentId = agent.id
         delivery = kind
         WKInterfaceDevice.current().play(.click)
@@ -224,6 +255,7 @@ final class AppModel: ObservableObject {
             }
             sendTask = nil
         }
+        return true
     }
 
     /// Settles a running send from the bridge's record for the send's own agent (not the shown one), or
@@ -301,6 +333,13 @@ final class AppModel: ObservableObject {
                 return "\(title) · \(event.kind == .attention ? "needs you" : "done")"
             }
             if relaxed, let lead, caller?.kind != .attention || lead.kind == .attention { caller = lead }
+            // A fresh done takes the watch to its agent while the agent on screen works (user, 2026-10-28);
+            // with the wrist down the caller turns the knob on the raise instead.
+            if !relaxed, let done = fresh.last(where: { $0.kind == .done }), Selection.follows(done, shown: shownAgent),
+               let index = worktrees.firstIndex(where: { $0.id == done.worktreeId }),
+               worktrees[index].agents.contains(where: { $0.id == done.agentId }) {
+                turn(to: index, agent: done.agentId)
+            }
             if beacon != .none, let line {
                 if relaxed && !buzzesInBackground {
                     // watchOS drops haptics while the wrist is down: keep the strongest for the wrist raise.

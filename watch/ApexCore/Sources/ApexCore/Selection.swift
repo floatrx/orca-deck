@@ -22,6 +22,28 @@ public enum Selection {
         return best.map { ($0.worktreeId, $0.agentId) }
     }
 
+    /// After a send: the next agent waiting on the user, in knob order after `current` (wrapping round, the
+    /// current worktree last), skipping `excluding` — the agent just sent to. A needs-you beats a done.
+    public static func nextWaiting(after current: Int, in worktrees: [Worktree],
+                                   excluding agentId: String?) -> (index: Int, agentId: String)? {
+        guard !worktrees.isEmpty else { return nil }
+        for bucket in [Bucket.attention, .done] {
+            for step in 1...worktrees.count {
+                let index = (current + step) % worktrees.count
+                if let agent = worktrees[index].agents.first(where: { $0.bucket == bucket && $0.id != agentId }) {
+                    return (index, agent.id)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// A fresh done takes the watch to its agent only while the agent on screen is working: a done or a
+    /// needs-you on screen is the user's business, and nothing moves.
+    public static func follows(_ event: BridgeEvent, shown: Agent?) -> Bool {
+        event.kind == .done && shown?.bucket == .working && event.agentId != shown?.id
+    }
+
     /// The worktrees the watch shows: without the inactive ones (no agents at all) when `hideInactive`, and
     /// without the completed ones — every agent done for at least `hideCompletedAfter` seconds (nil: never) —
     /// so the knob carries what works and what calls. A fresh done stays: it is the call to send its Next.

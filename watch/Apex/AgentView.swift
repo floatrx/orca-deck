@@ -244,12 +244,14 @@ struct AgentView: View {
                     .accessibilityIdentifier("agent-message")
             }
             if detail == nil || detail?.full == false {
-                HStack(spacing: 4) {
-                    ProgressView().frame(width: 10, height: 10)
+                // The system ProgressView ignores its frame on watchOS and dwarfs small text: a text-sized one.
+                Label {
                     Text("loading the full message")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.muted)
+                } icon: {
+                    Spinner()
                 }
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.muted)
                 .transition(.opacity)
             }
         }
@@ -380,11 +382,23 @@ struct AgentView: View {
 
     /// A delivery on its way: the bridge's outcome settles it.
     private var sendingRow: some View {
-        HStack(spacing: 6) {
-            ProgressView().frame(width: 14, height: 14)
-            Text(model.delivery == .answer ? "Answering…" : "Sending…").font(.system(size: 12)).foregroundStyle(Theme.muted)
+        Label {
+            Text(model.delivery == .answer ? "Answering…" : "Sending…")
+        } icon: {
+            Spinner()
         }
+        .font(.system(size: 12))
+        .foregroundStyle(Theme.muted)
         .frame(maxWidth: .infinity, minHeight: 40)
+    }
+}
+
+/// A spinner the size of the text next to it: it takes the surrounding font.
+private struct Spinner: View {
+    var body: some View {
+        Image(systemName: "progress.indicator")
+            .symbolEffect(.variableColor.iterative, options: .repeating)
+            .accessibilityLabel("Loading")
     }
 }
 

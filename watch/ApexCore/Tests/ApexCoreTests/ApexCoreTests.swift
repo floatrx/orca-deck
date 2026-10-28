@@ -203,6 +203,41 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(calling.agentId, "c1")
     }
 
+    func testAfterASendTheNextNeedsYouComesBeforeADone() throws {
+        let list = [try worktree("a", agents: [("a1", "done", 100)]),
+                    try worktree("b", agents: [("b1", "done", 200)]),
+                    try worktree("c", agents: [("c1", "attention", 300)])]
+        let next = try XCTUnwrap(Selection.nextWaiting(after: 0, in: list, excluding: "a1"))
+        XCTAssertEqual(next.index, 2)
+        XCTAssertEqual(next.agentId, "c1")
+    }
+
+    func testAfterASendTheNextDoneFollowsInKnobOrderAndWraps() throws {
+        let list = [try worktree("a", agents: [("a1", "done", 100)]),
+                    try worktree("b", agents: [("b1", "working", 200)]),
+                    try worktree("c", agents: [("c1", "done", 300)])]
+        XCTAssertEqual(Selection.nextWaiting(after: 2, in: list, excluding: "c1")?.agentId, "a1", "wraps round")
+        XCTAssertEqual(Selection.nextWaiting(after: 0, in: list, excluding: "a1")?.agentId, "c1")
+    }
+
+    func testAfterASendTheSameWorktreesOtherAgentCountsAndTheSentOneDoesNot() throws {
+        let list = [try worktree("a", agents: [("a1", "done", 100), ("a2", "done", 200)]),
+                    try worktree("b", agents: [("b1", "working", 200)])]
+        XCTAssertEqual(Selection.nextWaiting(after: 0, in: list, excluding: "a1")?.agentId, "a2")
+        XCTAssertNil(Selection.nextWaiting(after: 1, in: [try worktree("a", agents: [("a1", "done", 1)])], excluding: "a1"))
+    }
+
+    func testAFreshDoneIsFollowedOnlyFromAWorkingAgent() throws {
+        let done = BridgeEvent(seq: 1, kind: .done, worktreeId: "b", worktree: "b", agentId: "b1", at: 0)
+        let shown = { (bucket: String) in try self.worktree("a", agents: [("a1", bucket, 1)]).agents[0] }
+        XCTAssertTrue(Selection.follows(done, shown: try shown("working")))
+        XCTAssertFalse(Selection.follows(done, shown: try shown("done")), "a done on screen stays")
+        XCTAssertFalse(Selection.follows(done, shown: try shown("attention")), "a needs-you on screen stays")
+        XCTAssertFalse(Selection.follows(done, shown: nil))
+        let attention = BridgeEvent(seq: 2, kind: .attention, worktreeId: "b", worktree: "b", agentId: "b1", at: 0)
+        XCTAssertFalse(Selection.follows(attention, shown: try shown("working")), "only a done moves the watch")
+    }
+
     func testNobodyCallsWithoutAnAgentThatNeedsYou() throws {
         XCTAssertNil(Selection.calling(in: [try worktree("a", agents: [("a1", "done", 100), ("a2", "working", 200)])]))
         XCTAssertNil(Selection.calling(in: []))

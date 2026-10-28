@@ -5,6 +5,7 @@ import Foundation
 /// - `-apexPage 1` opens the agent page.
 /// - `-apexSelectRepo <repo or name>` starts on that worktree instead of Orca's active one.
 /// - `-apexDemo variants` shows three sample Next variants on the agent page (nothing is sent unless tapped).
+/// - `-apexDemo home` returns from the agent page 2 s after it opens, as after a send — nothing is sent.
 /// - `-apexPickVariants 0,2` ticks those Next variants instead of the first one.
 /// - `-apexPickAgent <session id>` shows that agent of its worktree (the long-press choice).
 /// - `-apexCornerOffset <pt>` adds points to the knob track's corner radii — renders corner variants to compare.

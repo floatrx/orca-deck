@@ -47,6 +47,8 @@ struct ContentView: View {
         .tabViewStyle(.page(indexDisplayMode: .never))
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: page) { _, value in model.agentPageVisible = value == .agent }
+        // After a send or an answer the main page comes back, turned to the next agent waiting on the user.
+        .onChange(of: model.homeRequest) { _, _ in withAnimation { page = .main } }
     }
 
     @ViewBuilder

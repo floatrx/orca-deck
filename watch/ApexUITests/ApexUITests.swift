@@ -131,6 +131,17 @@ final class ApexUITests: XCTestCase {
         XCTAssertEqual(position(centre)?.index, start.index, "the knob must not turn while the agent page has the crown")
     }
 
+    /// After a send the main page comes back (user, 2026-10-28); `-apexDemo home` returns without sending.
+    func testTheMainPageComesBackAfterASend() {
+        let app = launch(["-apexSelectRepo", "orca-deck", "-apexDemo", "home"])
+        let centre = app.buttons["knob-centre"]
+        _ = waitForWorktrees(centre)
+        app.swipeLeft()
+        XCTAssertTrue(app.descendants(matching: .any)["agent-page"].waitForExistence(timeout: 5), "agent page")
+        Thread.sleep(forTimeInterval: 3.5)
+        XCTAssertTrue(centre.isHittable, "back on the knob")
+    }
+
     /// Acceptance: a tap on the centre sends `go` (the runner reads the timing from the bridge trail).
     func testTapOnTheCentreFocusesTheChosenWorktree() throws {
         let session = try session("APEX_TAP_SESSION")

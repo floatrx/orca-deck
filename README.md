@@ -108,7 +108,9 @@ in Orca; a long press shows the worktree's next agent. Events buzz the wrist: 1 
 `Next:` suggestions (from the Stop hook's pending file), one tick each — the recommended first one is ticked.
 **Send**, pinned at the bottom, delivers the ticked ones at once — several as a numbered list — through Orca's
 own `agentSession.send` (`bridge/agent.cjs`): no key presses, Orca's focus stays put. See `protocol.md`
-§ Agent screen.
+§ Agent screen. After a send (or an answer) the watch goes back to the main page, turned to the next agent
+waiting on you — a needs-you first, then a done. While the agent on screen is working, a fresh done turns the
+watch to it; a done or a needs-you on screen is never moved.
 
 When the agent **asks a question** (an AskUserQuestion with options), the agent page shows the question and one
 button per option instead of the Next card: a tap answers it at once through Orca's own
