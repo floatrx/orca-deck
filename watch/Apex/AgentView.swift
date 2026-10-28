@@ -89,10 +89,12 @@ struct AgentView: View {
         return !variants.isEmpty
     }
 
-    /// The Next variants — none while a question is pending: they belong to the previous turn.
+    /// The Next variants — none while a question is pending or the agent works: they belong to the previous
+    /// turn, and the Stop hook writes fresh ones when this turn ends (user, 2026-10-28).
     private var variants: [String] {
         if DebugLaunch.demo == "variants" { return DebugLaunch.demoVariants }
-        guard let detail = model.detail, detail.id == model.shownAgent?.id, detail.question == nil else { return [] }
+        guard let detail = model.detail, detail.id == model.shownAgent?.id, detail.question == nil,
+              model.shownAgent?.bucket != .working else { return [] }
         return detail.next
     }
 
@@ -362,7 +364,8 @@ struct AgentView: View {
             .modifier(PinnedCardFrame(bottomRadius: $cardBottomRadius))
     }
 
-    /// The card without variants: the outcome of the last send (a sent variant leaves the list), else "No Next".
+    /// The card without variants: the outcome of the last send (a sent variant leaves the list), else "Working…"
+    /// while the agent works (its Next comes when the turn ends), else "No Next".
     @ViewBuilder
     private func outcome(_ state: AppModel.SendState) -> some View {
         switch state {
@@ -374,9 +377,20 @@ struct AgentView: View {
         case .failed(let note):
             Text(note).font(.system(size: 11)).foregroundStyle(.red).lineLimit(2)
         case .idle, .sending:
-            Label("No Next", systemImage: "arrow.right.circle")
+            if model.shownAgent?.bucket == .working {
+                Label {
+                    Text("Working…")
+                } icon: {
+                    Spinner()
+                }
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.muted)
+                .foregroundStyle(Theme.color(.working))
+                .accessibilityIdentifier("next-working")
+            } else {
+                Label("No Next", systemImage: "arrow.right.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+            }
         }
     }
 

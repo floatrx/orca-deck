@@ -106,6 +106,7 @@ in Orca; a long press shows the worktree's next agent. Events buzz the wrist: 1 
 
 **Swipe left** for the agent page: the agent's full last message (the crown scrolls it), then the user's own
 `Next:` suggestions (from the Stop hook's pending file), one tick each — the recommended first one is ticked.
+While the agent works they are hidden ("Working…"): they belong to its previous turn.
 **Send**, pinned at the bottom, delivers the ticked ones at once — several as a numbered list — through Orca's
 own `agentSession.send` (`bridge/agent.cjs`): no key presses, Orca's focus stays put. See `protocol.md`
 § Agent screen. After a send (or an answer) the watch goes back to the main page, turned to the next agent
