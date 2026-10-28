@@ -3,7 +3,7 @@ import XCTest
 /// Acceptance tests of .work/plans/apex-v2.md on the watchOS simulator, against the running bridge
 /// (`watch/configure.sh http://localhost:7353` before the run). Environment (xcodebuild `TEST_RUNNER_` prefix):
 /// - `APEX_SCRATCH_SESSION` — a scratch chat session with a long last message and a pending Next: the crown
-///   scrolls its message, and the Undo test cancels its send inside the 3 s window;
+///   scrolls its message (Send has no undo window since 2026-10-28, so no test presses it);
 /// - `APEX_TAP_SESSION` — the session the tap test reveals in Orca. Leave it unset unless that pane is already
 ///   on the Mac's screen: the tap switches Orca's active worktree.
 /// No other session is ever targeted. A launch argument (`-apex.layout cards`) picks a setting for one run.
@@ -140,21 +140,6 @@ final class ApexUITests: XCTestCase {
         centre.tap()
         Thread.sleep(forTimeInterval: 2)
         XCTAssertTrue(centre.exists)
-    }
-
-    /// Acceptance: Undo within 3 s sends nothing (the runner checks the trail has no `say` for the session).
-    func testUndoWithinThreeSecondsSendsNothing() throws {
-        let session = try session("APEX_SCRATCH_SESSION")
-        let app = launch(["-apexPage", "1", "-apexSelectRepo", "orca-deck", "-apexPickAgent", session])
-        let send = app.buttons["send-button"]
-        XCTAssertTrue(send.waitForExistence(timeout: 20), "Send on the scratch session's Next")
-        send.tap()
-        let undo = app.buttons["undo-button"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 3), "the undo countdown")
-        undo.tap()
-        XCTAssertTrue(send.waitForExistence(timeout: 3), "Undo returns the card to Send")
-        Thread.sleep(forTimeInterval: 5)  // well past the 3 s window
-        XCTAssertTrue(send.exists, "still nothing sent")
     }
 
     /// Feedback 0.3: the cards layout lists the worktrees, the chosen one marked, and the crown scrolls it.

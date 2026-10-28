@@ -4,7 +4,7 @@ import WatchKit
 
 /// Polls the bridge about once a second (protocol.md: no long-poll), keeps the crown's selection on its
 /// worktree, pulses for new events, focuses worktrees in Orca, and — for the agent page — fetches the
-/// agent's full message and sends Next prompts with a short undo window.
+/// agent's full message, sends Next prompts at once and answers questions after a short undo window.
 @MainActor
 final class AppModel: ObservableObject {
     enum Connection: Equatable {
@@ -14,7 +14,7 @@ final class AppModel: ObservableObject {
         case outdated(Int)
     }
 
-    /// The Send button's life: a countdown the user can undo, then the bridge's outcome. It belongs to the
+    /// A delivery's life: a countdown the user can undo (answers only), then the bridge's outcome. It belongs to the
     /// agent in `sendAgentId`; the agent page shows it only for that agent.
     enum SendState: Equatable {
         case idle
@@ -193,30 +193,34 @@ final class AppModel: ObservableObject {
 
     // MARK: - Agent page
 
-    /// Send: count down `undoSeconds`, then send `text` to the shown agent — the agent captured now, even if
-    /// the user turns away. Undo, or turning to another agent, cancels the countdown.
+    /// Send: `text` goes to the shown agent at once (user, 2026-10-28: the wait was friction — ticking the
+    /// variants and then pressing Send is already the confirmation).
     func send(_ text: String) {
         guard let agent = shownAgent else { return }
+        WKInterfaceDevice.current().play(.click)
         deliver(text, as: .say, to: agent, previous: detail?.id == agent.id ? detail?.send?.at : nil,
-                command: .say(agent.id, text))
+                command: .say(agent.id, text), countdown: 0)
     }
 
-    /// An option tap: the same countdown, then answer the shown agent's question with that option.
+    /// An option tap: count down `undoSeconds`, then answer the shown agent's question with that option — one
+    /// tap with no confirmation, so it keeps the undo window. Undo, or turning to another agent, cancels it.
     func answer(_ option: AgentQuestion.Option, to question: AgentQuestion) {
         guard let agent = shownAgent else { return }
         deliver(option.label, as: .answer, to: agent, previous: detail?.id == agent.id ? detail?.answer?.at : nil,
-                command: .answer(agent.id, question, option: option))
+                command: .answer(agent.id, question, option: option), countdown: Self.undoSeconds)
     }
 
-    /// The countdown, then `command`; `text` is what the card shows while it runs. The bridge's record of the
-    /// delivery (`send` or `answer` in AgentDetail) settles it (checkSend).
-    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command) {
+    /// `countdown` seconds (none for 0), then `command` to the agent captured now, even if the user turns away;
+    /// `text` is what the card shows meanwhile. The bridge's record of the delivery (`send` or `answer` in
+    /// AgentDetail) settles it (checkSend).
+    private func deliver(_ text: String, as kind: Delivery, to agent: Agent, previous: Double?, command: Command,
+                         countdown: Int) {
         guard sendTask == nil else { return }
         if case .sending = sendState { return }
         sendAgentId = agent.id
         delivery = kind
         sendTask = Task {
-            for remaining in stride(from: Self.undoSeconds, to: 0, by: -1) {
+            for remaining in stride(from: countdown, to: 0, by: -1) {
                 sendState = .countdown(text: text, seconds: remaining)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if Task.isCancelled { return }
@@ -280,14 +284,11 @@ final class AppModel: ObservableObject {
         guard let fetched = try? await client.agent(id: agent.id), fetched.id == shownAgent?.id else { return }
         if fetched != detail { detail = fetched }
         if DebugLaunch.demo == "countdown", sendState == .idle {
-            // A pending question counts down an answer; else the first Next.
+            // Only an answer counts down; a Send goes at once.
             if let option = fetched.question?.options.first {
                 sendAgentId = fetched.id
                 delivery = .answer
                 sendState = .countdown(text: option.label, seconds: Self.undoSeconds)
-            } else if let first = fetched.next.first {
-                sendAgentId = fetched.id
-                sendState = .countdown(text: first, seconds: Self.undoSeconds)
             }
         }
         // DEBUG end-to-end test: only for the exact session given by -apexPickAgent.

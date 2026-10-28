@@ -4,7 +4,7 @@ import Foundation
 ///   xcrun simctl launch <sim> com.floatrx.orcadeck.apex -apexPage 1 -apexSelectRepo orca-deck -apexDemo countdown
 /// - `-apexPage 1` opens the agent page.
 /// - `-apexSelectRepo <repo or name>` starts on that worktree instead of Orca's active one.
-/// - `-apexDemo countdown` shows the Send button's undo countdown without sending anything.
+/// - `-apexDemo countdown` shows an answer's undo countdown on a pending question, without answering.
 /// - `-apexDemo variants` shows three sample Next variants on the agent page (nothing is sent unless tapped).
 /// - `-apexPickVariants 0,2` ticks those Next variants instead of the first one.
 /// - `-apexPickAgent <session id>` shows that agent of its worktree (the long-press choice).

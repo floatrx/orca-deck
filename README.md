@@ -104,10 +104,11 @@ centre shows the chosen worktree's state, name and what its agent is doing. A ta
 in Orca; a long press shows the worktree's next agent. Events buzz the wrist: 1 haptic for `done`, 2 for
 `needs you`, plus a shake of the dial.
 
-**Swipe left** for the agent page: the agent's full last message (the crown scrolls it) and the **Next card**
-pinned at the bottom — the user's own `Next:` suggestions (from the Stop hook's pending file). **Send** waits
-3 s with an Undo, then delivers the prompt through Orca's own `agentSession.send` (`bridge/agent.cjs`): no key
-presses, Orca's focus stays put. See `protocol.md` § Agent screen.
+**Swipe left** for the agent page: the agent's full last message (the crown scrolls it), then the user's own
+`Next:` suggestions (from the Stop hook's pending file), one tick each — the recommended first one is ticked.
+**Send**, pinned at the bottom, delivers the ticked ones at once — several as a numbered list — through Orca's
+own `agentSession.send` (`bridge/agent.cjs`): no key presses, Orca's focus stays put. See `protocol.md`
+§ Agent screen.
 
 When the agent **asks a question** (an AskUserQuestion with options), the agent page shows the question and one
 button per option instead of the Next card: a tap counts down 3 s (Undo), then answers it through Orca's own
