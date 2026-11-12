@@ -16,8 +16,22 @@
 // Every failure prints {"error": …} and exits 1. The text is read from stdin so it never shows up in `ps`.
 const OUT = "/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out";
 const { RuntimeClient, getDefaultUserDataPath } = require(OUT + "/cli/runtime-client.js");
-const send = require(OUT + "/shared/structured-agent-session-send-mutation.js");
-const mutation = require(OUT + "/shared/structured-agent-session-mutation.js");
+// Orca moves its internals between releases (2026-11-12: shared/ → shared/agent-session/{requests,lifecycle}/):
+// take the first path that exists.
+function requireFirst(paths) {
+  for (const path of paths) {
+    try {
+      return require(OUT + path);
+    } catch (error) {
+      if (error.code !== "MODULE_NOT_FOUND") throw error;
+    }
+  }
+  throw new Error("Orca module not found: " + paths.join(" | "));
+}
+const send = requireFirst(["/shared/agent-session/requests/structured-agent-session-send-mutation.js",
+  "/shared/structured-agent-session-send-mutation.js"]);
+const mutation = requireFirst(["/shared/agent-session/lifecycle/structured-agent-session-mutation.js",
+  "/shared/structured-agent-session-mutation.js"]);
 const { randomBytes } = require("node:crypto");
 
 const [mode, sessionId] = process.argv.slice(2);

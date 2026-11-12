@@ -2,21 +2,34 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyserial==3.5"]
 # ///
-"""USB transport for the knob: bridge state down the serial line, knob commands up to the bridge.
+"""The knob's relay: bridge state down to the knob, the knob's commands up to the bridge.
 
 Lines on the wire (one JSON object per line, UTF-8):
-  relay → knob   S {"worktrees": [...]}   the state, trimmed to the fields the knob shows
-  knob → relay   C {"cmd": "go", ...}     a command, posted to /api/cmd
-  relay → knob   A {"cmd": ..., "ok": ..., "note": ...}   the bridge's answer
-Any other line from the knob is its debug log and is printed as is.
+  relay → knob   S {"worktrees": [...]}    the state, trimmed to what the knob shows; sent when it changes
+  relay → knob   K {"now": ms}             keepalive, every second (the knob drops a link after 3 s of silence);
+                                           "now" (also in S) sets the knob's clock: Wi-Fi NTP is off on BLE
+  relay → knob   D {...AgentDetail...}     the agent the knob's agent page shows (protocol.md § AgentDetail)
+  relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
+  knob → relay   C {"cmd": ...}            a command for /api/cmd; {"cmd": "detail", "id"} stays here and
+                                           picks the agent whose detail the relay polls ("" stops it);
+                                           {"cmd": "hello"} (KnobRelay.app, on a BLE connect) resends S and D
+Any other line from the knob is its debug log.
 
-Run: uv run knob/relay.py   (stop it before flashing: it holds the serial port)
+Transports, both at once:
+  --serial   the knob on USB (Espressif VID 0x303A), found and re-found by itself (default on)
+  --stdio    stdin/stdout — KnobRelay.app carries these lines over BLE (knob/mac)
+Logs go to stderr: with --stdio, stdout is the wire.
+
+Run: uv run knob/relay.py [--stdio] [--no-serial]   (stop it before flashing: it holds the serial port)
 """
+import argparse
 import json
+import os
 import pathlib
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 import serial
@@ -26,12 +39,13 @@ BRIDGE = "http://localhost:7352"
 TOKEN = json.loads((pathlib.Path.home() / ".config/orca-deck/bridge.json").read_text())["token"]
 ESPRESSIF_VID = 0x303A
 POLL_S = 1.0
-RESEND_S = 2.0  # the knob treats the link as gone after 3 s without a state line
-LAST_CHARS = 140
+FULL_STATE_S = 30.0  # a full S even without a change, in case a line was lost
+TEXT_CHARS = 100
+MESSAGE_CHARS = 1200
 
 
 def log(text):
-    print(time.strftime("%H:%M:%S"), text, flush=True)
+    print(time.strftime("%H:%M:%S"), text, file=sys.stderr, flush=True)
 
 
 def bridge(method, path, body=None):
@@ -50,12 +64,137 @@ def trim(state):
         agents = []
         for a in w.get("agents", []):
             agent = {k: a[k] for k in keep_agent if k in a}
-            agent["last"] = (a.get("last") or "")[:LAST_CHARS]
-            agent["prompt"] = (a.get("prompt") or "")[:LAST_CHARS]
+            agent["last"] = (a.get("last") or "")[:TEXT_CHARS]
+            agent["prompt"] = (a.get("prompt") or "")[:TEXT_CHARS]
             agents.append(agent)
         worktrees.append({"id": w.get("id"), "name": w.get("name"), "repo": w.get("repo"),
                           "active": w.get("active", False), "agents": agents})
     return {"worktrees": worktrees}
+
+
+def trim_detail(detail):
+    keep = {k: detail[k] for k in ("id", "bucket", "next", "question") if k in detail}
+    keep["message"] = (detail.get("message") or "")[:MESSAGE_CHARS]
+    return keep
+
+
+def encode(kind, payload):
+    return (kind + " " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+
+
+class Link:
+    """One way to reach the knob. Subclasses provide write() and feed lines to on_line()."""
+
+    name = "link"
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.alive = True
+        self.watch = ""          # the agent whose detail the knob wants
+        self.last_detail = None
+        self.last_state = None
+        self.last_full = 0.0
+
+    def send(self, data):
+        with self.lock:
+            self.write(data)
+
+    def on_line(self, line):
+        if not line.startswith("C "):
+            if line:
+                log(f"knob ({self.name}) │ {line}")
+            return
+        try:
+            command = json.loads(line[2:])
+        except json.JSONDecodeError:
+            log(f"{self.name}: garbled command line")
+            return
+        if command.get("cmd") == "detail":
+            self.watch = command.get("id") or ""
+            self.last_detail = None
+            return
+        if command.get("cmd") == "hello":  # a fresh BLE connection: send everything again at once
+            self.last_state = self.last_detail = None
+            return
+        try:
+            ack = bridge("POST", "/api/cmd", command)
+        except Exception as error:  # the bridge is down
+            ack = {"cmd": command.get("cmd", "?"), "ok": False, "note": str(error)[:80]}
+        log(f"{self.name}: cmd {command.get('cmd')} → ok={ack.get('ok')} {ack.get('note') or ''}")
+        self.send(encode("A", ack))
+
+    def tick(self, state_line):
+        """Called once per poll with the encoded state."""
+        now = time.time()
+        if state_line != self.last_state or now - self.last_full >= FULL_STATE_S:
+            # "now" goes in after the comparison: the clock alone must not count as a change.
+            self.send(state_line[:-2] + f',"now":{int(now * 1000)}}}\n'.encode())
+            self.last_state, self.last_full = state_line, now
+        else:
+            self.send(encode("K", {"now": int(time.time() * 1000)}))
+        if self.watch:
+            try:
+                detail = encode("D", trim_detail(bridge("GET", "/api/agent?id=" + urllib.parse.quote(self.watch))))
+            except Exception as error:
+                log(f"{self.name}: detail failed: {error}")
+                return
+            if detail != self.last_detail:
+                self.send(detail)
+                self.last_detail = detail
+
+
+class SerialLink(Link):
+    name = "usb"
+
+    def __init__(self, device):
+        super().__init__()
+        # DTR/RTS stay low: toggling them through the USB-Serial-JTAG unit resets the ESP32-S3.
+        self.port = serial.Serial()
+        self.port.port, self.port.baudrate, self.port.timeout = device, 115200, 0.1
+        self.port.dtr = self.port.rts = False
+        self.port.open()
+        threading.Thread(target=self.reader, daemon=True).start()
+
+    def write(self, data):
+        self.port.write(data)
+
+    def reader(self):
+        buffer = b""
+        while self.alive:
+            try:
+                buffer += self.port.read(4096)
+            except serial.SerialException as error:
+                log(f"usb read failed: {error}")
+                self.alive = False
+                return
+            while b"\n" in buffer:
+                raw, buffer = buffer.split(b"\n", 1)
+                self.on_line(raw.decode("utf-8", "replace").rstrip("\r"))
+
+    def close(self):
+        self.alive = False
+        try:
+            self.port.close()
+        except Exception:
+            pass
+
+
+class StdioLink(Link):
+    name = "ble"
+
+    def __init__(self):
+        super().__init__()
+        threading.Thread(target=self.reader, daemon=True).start()
+
+    def write(self, data):
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+
+    def reader(self):
+        for raw in sys.stdin.buffer:
+            self.on_line(raw.decode("utf-8", "replace").rstrip("\r\n"))
+        log("stdin closed: the app is gone")
+        self.alive = False
 
 
 def find_port():
@@ -65,78 +204,51 @@ def find_port():
     return None
 
 
-def open_port(device):
-    # DTR/RTS stay low: toggling them through the USB-Serial-JTAG unit resets the ESP32-S3.
-    link = serial.Serial()
-    link.port, link.baudrate, link.timeout = device, 115200, 0.1
-    link.dtr = link.rts = False
-    link.open()
-    return link
-
-
-def reader(link, lock, stop):
-    buffer = b""
-    while not stop.is_set():
-        try:
-            chunk = link.read(4096)
-        except serial.SerialException as error:
-            log(f"serial read failed: {error}")
-            stop.set()
-            return
-        buffer += chunk
-        while b"\n" in buffer:
-            raw, buffer = buffer.split(b"\n", 1)
-            line = raw.decode("utf-8", "replace").rstrip("\r")
-            if not line.startswith("C "):
-                if line:
-                    print("  knob │", line, flush=True)
-                continue
-            try:
-                command = json.loads(line[2:])
-                ack = bridge("POST", "/api/cmd", command)
-            except Exception as error:  # the bridge is down or the line is garbled
-                ack = {"cmd": "?", "ok": False, "note": str(error)[:80]}
-            log(f"cmd {command.get('cmd')} → ok={ack.get('ok')} {ack.get('note') or ''}")
-            with lock:
-                link.write(b"A " + json.dumps(ack, ensure_ascii=False).encode() + b"\n")
-
-
-def serve(device):
-    link = open_port(device)
-    log(f"knob on {device}")
-    lock, stop = threading.Lock(), threading.Event()
-    threading.Thread(target=reader, args=(link, lock, stop), daemon=True).start()
-    last_line, last_sent = None, 0.0
-    try:
-        while not stop.is_set():
-            try:
-                line = json.dumps(trim(bridge("GET", "/api/state")), ensure_ascii=False, separators=(",", ":"))
-            except Exception as error:
-                log(f"bridge: {error}")
-                time.sleep(POLL_S)
-                continue
-            if line != last_line or time.time() - last_sent >= RESEND_S:
-                with lock:
-                    link.write(b"S " + line.encode() + b"\n")
-                last_line, last_sent = line, time.time()
-            time.sleep(POLL_S)
-    except serial.SerialException as error:
-        log(f"serial write failed: {error}")
-    finally:
-        stop.set()
-        link.close()
-        log("knob gone")
-
-
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stdio", action="store_true", help="carry lines over stdin/stdout (KnobRelay.app)")
+    parser.add_argument("--no-serial", action="store_true", help="do not look for the knob on USB")
+    args = parser.parse_args()
+    # KNOB_RELAY_NO_SERIAL=1 (the LaunchAgent's environment) leaves the USB port to a test driver (knob/test).
+    args.no_serial = args.no_serial or os.environ.get("KNOB_RELAY_NO_SERIAL") == "1"
+
+    links = []
+    if args.stdio:
+        links.append(StdioLink())
+    usb = None
+    last_scan = 0.0
     while True:
-        device = find_port()
-        if device:
+        if args.stdio and not links[0].alive:
+            sys.exit(0)  # the app closed our stdin: it restarts us with the BLE link
+        if not args.no_serial and usb is None and time.time() - last_scan >= 2:
+            last_scan = time.time()
+            device = find_port()
+            if device:
+                try:
+                    usb = SerialLink(device)
+                    links.append(usb)
+                    log(f"knob on {device}")
+                except serial.SerialException as error:
+                    log(f"cannot open {device}: {error}")
+        try:
+            state = trim(bridge("GET", "/api/state"))
+            state_line = encode("S", state)
+        except Exception as error:
+            log(f"bridge: {error}")
+            time.sleep(POLL_S)
+            continue
+        for link in list(links):
             try:
-                serve(device)
-            except serial.SerialException as error:
-                log(f"cannot open {device}: {error}")
-        time.sleep(2)
+                link.tick(state_line)
+            except Exception as error:  # a write failed: the cable is out
+                log(f"{link.name}: {error}")
+                link.alive = False
+            if not link.alive and link is usb:
+                usb.close()
+                links.remove(usb)
+                usb = None
+                log("knob gone from usb")
+        time.sleep(POLL_S)
 
 
 if __name__ == "__main__":

@@ -245,6 +245,26 @@ Client loop:
 - The trail records `answer <session> → answered in <ms> ms | failed in <ms> ms: <reason>` — never the
   question or the option.
 
+## Knob transports (knob/)
+
+The knob is a bridge client through `knob/relay.py`; the bridge itself is unchanged.
+
+| Link | Carrier | Relay side |
+|---|---|---|
+| BLE (main) | Nordic UART service `6E400001-…`, encrypted + bonded; RX write (Mac → knob), TX notify (knob → Mac) | `KnobRelay.app` (CoreBluetooth) runs `relay.py --stdio` and carries lines both ways |
+| USB (debug) | USB-Serial-JTAG, 115200 | `relay.py` opens the port itself (Espressif VID 0x303A) |
+| Wi-Fi (fallback) | HTTP straight to `:7353` with the bearer token | — |
+
+Relay lines, one JSON object each, `\n`-terminated:
+
+| Line | Direction | Body |
+|---|---|---|
+| `S` | relay → knob | `{worktrees:[…], now}` — the state trimmed to `id, name, repo, active` and agents `id, kind, chat, bucket, tool, since, last (≤100), prompt (≤100)`; sent on a change, and every 30 s |
+| `K` | relay → knob | `{now}` — keepalive each poll (1 s); the knob drops a link after 3 s without `S` / `K`. `now` (epoch ms, also in `S`) sets the knob's clock: NTP runs only on Wi-Fi |
+| `D` | relay → knob | `AgentDetail` trimmed to `id, bucket, next, question, message (≤1200)`; sent when it changes |
+| `A` | relay → knob | the `/api/cmd` answer (`Ack`) |
+| `C` | knob → relay | an `/api/cmd` body (`go`, `enter`, `send`, `say`, `answer`); `{cmd:"detail", id}` stays in the relay and picks the agent whose `AgentDetail` it polls (`""` stops); `{cmd:"hello"}` (KnobRelay.app on each BLE connect) makes it resend `S` and `D` at once |
+
 ## ntfy
 
 On each event the bridge publishes one message (JSON publishing, so UTF-8 names survive):
