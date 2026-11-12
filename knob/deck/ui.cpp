@@ -604,10 +604,12 @@ static void render()
   lv_obj_set_style_arc_color(halo, c, LV_PART_MAIN);
   lv_obj_set_style_text_color(state_label, c, 0);
   set_text(state_label, !a ? "NO AGENTS" : bucket == "attention" ? "NEEDS YOU" : upper(bucket));
-  set_text(name_label, w.name);
+  // As Apex's Centre.title / Centre.meta: the project is the big label, the worktree (branch) leads the small one.
+  bool repo_title = w.repo.length() && w.repo != w.name;
+  set_text(name_label, repo_title ? w.repo : w.name);
 
   String meta;
-  if (w.repo.length() && w.repo != w.name) meta = w.repo;
+  if (repo_title) meta = w.name;
   if (a) {
     meta += String(meta.length() ? " · " : "") + (a->chat ? "chat" : "terminal");
     if (a->kind.length()) meta += " · " + a->kind;
