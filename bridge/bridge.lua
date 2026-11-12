@@ -23,6 +23,7 @@ local DIR = debug.getinfo(1, "S").source:match("^@(.*/)")
 local core = dofile(DIR .. "core.lua")
 
 local ORCA_CLI = "/opt/homebrew/bin/orca"
+local PS_FILE = "/tmp/orca-deck-ps.json"
 local ORCA_BUNDLE = "com.stablyai.orca"
 local PORT = 7352
 local REMOTE_PORT = 7353
@@ -203,8 +204,13 @@ local function poll()
     return
   end
   deckBridge.polling = true
-  deckBridge.task = hs.task.new(ORCA_CLI, function(code, out)
+  -- `ps --json` outgrows the 64 KB pipe buffer and hs.task does not drain the pipe while the task
+  -- runs, so the CLI blocked forever on write. The shell sends stdout to a file instead.
+  deckBridge.task = hs.task.new("/bin/sh", function(code)
     deckBridge.polling = false
+    local file = io.open(PS_FILE)
+    local out = file and file:read("a")
+    if file then file:close() end
     local ok, doc = pcall(hs.json.decode, out or "")
     if code == 0 and ok and type(doc) == "table" then
       local worktrees = core.worktreesOf(doc)
@@ -237,7 +243,7 @@ local function poll()
       deckBridge.again = false
       poll()
     end
-  end, { "worktree", "ps", "--json" })
+  end, { "-c", '"$0" worktree ps --json > "$1"', ORCA_CLI, PS_FILE })
   deckBridge.task:start()
 end
 
