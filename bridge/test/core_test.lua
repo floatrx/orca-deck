@@ -398,6 +398,26 @@ test("focusShortcut: on / off map to the two Shortcuts; anything else is refused
   eq(core.commandRefusal("focus", "ws"), "focus needs the bearer token: use POST /api/cmd")
 end)
 
+test("dayUpdate: spans grow while the state holds, split on a change or a gap; done is not kept", function()
+  local day = {}
+  local function wt(bucket) return { { id = "w1", repo = "deck", name = "main", agents = { { bucket = bucket } } } } end
+  core.dayUpdate(day, wt("working"), 600)
+  core.dayUpdate(day, wt("working"), 601)
+  core.dayUpdate(day, wt("attention"), 602)
+  core.dayUpdate(day, wt("attention"), 604)   -- a 2 min gap still grows
+  core.dayUpdate(day, wt("done"), 605)        -- not kept
+  core.dayUpdate(day, wt("working"), 640)     -- a new span after the gap
+  local spans = day.rows.w1.spans
+  eq(#spans, 3)
+  eq(spans[1][1], 600) eq(spans[1][2], 601) eq(spans[1][3], "w")
+  eq(spans[2][1], 602) eq(spans[2][2], 604) eq(spans[2][3], "a")
+  eq(core.spanMinutes(day.waiting), 3)
+  local view = core.dayView(day, 641, 6)
+  eq(view.rows[1].name, "deck")
+  eq(view.waited, 3)
+  eq(view.worked, 3)
+end)
+
 test("cpuPercent: busy share between two samples; nil without a previous one", function()
   eq(core.cpuPercent(nil, { active = 10, idle = 90 }), nil)
   eq(core.cpuPercent({ active = 100, idle = 900 }, { active = 130, idle = 970 }), 30)

@@ -195,6 +195,7 @@ void tz_persist()
 }
 
 static void apply_transcript(const String &body);
+static void apply_day(const String &body);
 
 void handle_line(const String &line, LinkKind via)
 {
@@ -217,6 +218,8 @@ void handle_line(const String &line, LinkKind via)
     apply_mac(body);
   } else if (kind == 'X') {
     apply_transcript(body);
+  } else if (kind == 'Y') {
+    apply_day(body);
   } else if (kind == 'T' && via == LINK_USB) {
     ui_test_enqueue(body);  // test input over the cable only: it needs physical access
   } else if (kind == 'A') {
@@ -234,6 +237,26 @@ void push_voice(const String &line)
 {
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   if (shared.voice.size() < 600) shared.voice.push_back(line);  // 19 s of audio waiting: the link is gone anyway
+  xSemaphoreGive(shared_mux);
+}
+
+static void apply_day(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  DayData day;
+  day.now = doc["now"] | -1;
+  day.waited = doc["wa"] | 0;
+  day.worked = doc["wo"] | 0;
+  for (JsonArray row : doc["r"].as<JsonArray>()) {
+    DayRow r;
+    r.name = row[0] | "";
+    for (JsonArray s : row[1].as<JsonArray>()) r.spans.push_back({(int16_t)(s[0] | 0), (int16_t)(s[1] | 0), (s[2] | 0) == 1});
+    day.rows.push_back(r);
+  }
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  shared.day = day;
+  shared.day_version++;
   xSemaphoreGive(shared_mux);
 }
 

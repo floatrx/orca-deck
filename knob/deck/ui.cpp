@@ -728,6 +728,7 @@ static void loop_tick(lv_timer_t *)
   wheel_tick();
   focus_tick();
   usage_tick();
+  day_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -809,6 +810,7 @@ extern "C" void ui_init(void)
   wheel_create();
   focus_create();
   usage_create();
+  day_create();
   dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it

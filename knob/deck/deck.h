@@ -63,6 +63,20 @@ struct MacStatus {
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
+// GET /api/day via the relay's Y line: the Agent Day Timeline.
+struct DaySpan {
+  int16_t from, to;  // minutes of the local day
+  bool waiting;      // needs you (else working)
+};
+struct DayRow {
+  String name;
+  std::vector<DaySpan> spans;
+};
+struct DayData {
+  int now = -1, waited = 0, worked = 0;
+  std::vector<DayRow> rows;
+};
+
 struct Shared {
   std::vector<Worktree> list;
   uint32_t version = 0;
@@ -77,6 +91,8 @@ struct Shared {
   std::deque<String> voice;       // V lines for the relay (dictation), sent before commands
   String transcript, transcript_error;  // the relay's X line
   uint32_t transcript_version = 0;
+  DayData day;
+  uint32_t day_version = 0;
 };
 
 extern SemaphoreHandle_t shared_mux;
@@ -174,7 +190,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -225,6 +241,11 @@ String focus_report();
 void usage_create();
 void usage_tick();
 String usage_report();
+
+// app_day.cpp
+void day_create();
+void day_tick();
+String day_report();
 
 // app_clock.cpp
 void clock_create();

@@ -198,6 +198,39 @@ end
 
 --- Runs `orca worktree ps --json` off the main thread, emits events for bucket changes, and pushes
 --- the list when it changed. A poll asked for while one runs is remembered and runs right after it.
+-- The knob's Agent Day Timeline: today's working / needs-you spans per worktree, kept in
+-- ~/.config/orca-deck/day/<date>.json so a reload or a restart keeps the day. Updated once a minute from poll().
+local DAY_DIR = os.getenv("HOME") .. "/.config/orca-deck/day/"
+
+local function today()
+  local t = os.date("*t")
+  return os.date("%Y-%m-%d"), t.hour * 60 + t.min
+end
+
+local function loadDay(date)
+  local file = io.open(DAY_DIR .. date .. ".json", "r")
+  if not file then return { date = date } end
+  local ok, day = pcall(hs.json.decode, file:read("a"))
+  file:close()
+  return ok and type(day) == "table" and day or { date = date }
+end
+
+local function trackDay(worktrees)
+  local date, minute = today()
+  if deckBridge.dayMinute == minute and deckBridge.day and deckBridge.day.date == date then return end
+  if not deckBridge.day or deckBridge.day.date ~= date then
+    hs.fs.mkdir(DAY_DIR)
+    deckBridge.day = loadDay(date)
+  end
+  deckBridge.dayMinute = minute
+  core.dayUpdate(deckBridge.day, worktrees, minute)
+  local file = io.open(DAY_DIR .. date .. ".json", "w")
+  if file then
+    file:write(hs.json.encode(deckBridge.day))
+    file:close()
+  end
+end
+
 local function poll()
   if deckBridge.polling then
     deckBridge.again = true
@@ -230,6 +263,7 @@ local function poll()
         end
       end
       deckBridge.worktrees = worktrees
+      trackDay(worktrees)
       for _, event in ipairs(fresh) do announce(deckBridge.events:add(event, nowMs())) end
       refreshLanURLs()
       local payload = hs.json.encode({ type = "state", v = core.PROTOCOL, seq = deckBridge.events.seq, worktrees = worktrees,
@@ -736,6 +770,10 @@ local function onApi(method, route, query, headers, body)
       return json(400, { error = "bad command" })
     end
     return json(200, run(message, "http " .. from))
+  elseif method == "GET" and route == "/api/day" then
+    local date, minute = today()
+    if not deckBridge.day or deckBridge.day.date ~= date then deckBridge.day = loadDay(date) end
+    return json(200, core.dayView(deckBridge.day, minute, 6))
   elseif method == "GET" and route == "/api/mac" then
     return json(200, macStatus())
   elseif method == "GET" and route == "/api/agent" then

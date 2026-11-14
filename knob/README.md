@@ -18,7 +18,7 @@ fallbacks.
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
 **swipe down in any app goes back to the hub**. Apps: **Claude** (the agents app — called "Claude" everywhere on the knob; its badge is Clawd on black, acting out the loudest agent state; its row reads
-"2 done · 5h 34% · wk 79%"), Usage, Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
+"2 done · 5h 34% · wk 79%"), Usage, Day, Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
@@ -60,6 +60,12 @@ command every 80 ms. **It acts on whatever app is in front** — test it with Sc
 critical), the % and the time to the reset in the middle, an inner dial for the 5 h window (or a per-model limit
 such as Fable when no window is open), and a stacked bar of what the week went on (Code / Cowork / Chats), the
 legend in the parts' colours. All from the bridge's `oauth/usage` (Orca's status-bar source).
+
+**Day** (Agent Day Timeline): today on a 24 h dial — midnight at the top, one ring per worktree (busiest outside),
+blue while its agent worked, orange while it waited on you, a white hand for now; the centre says how long agents
+waited on you and how long they worked. The crown moves a cursor 15 min a detent and the centre tells who did what
+then. The bridge keeps the spans in `~/.config/orca-deck/day/<date>.json` (only from when it started recording;
+`done` is not kept — it lingers until the next prompt).
 
 **Focus**: a tap turns on the Mac's Focus (the Shortcut "Knob Focus On" — make it once in Shortcuts: *Set Focus →
 Do Not Disturb → On, until turned off*; and "Knob Focus Off" with *Off*), starts the Timer's Pomodoro and keeps a

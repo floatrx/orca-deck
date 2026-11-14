@@ -314,6 +314,64 @@ function core.focusShortcut(message)
   return core.FOCUS_SHORTCUTS[message.on and "on" or "off"], nil
 end
 
+--- The knob's Agent Day Timeline: per worktree, today's minutes of working and needs-you as spans
+--- { from, to, "w" | "a" } (minutes of the local day). `done` and idle are not kept: a done lingers for hours
+--- until the next prompt and would paint the whole day. Plus two unions over all worktrees: `waiting` (any
+--- agent needs you — the minutes the user held the work up) and `working`.
+--- A span grows while its state holds and the gap is at most 2 min (polls skip; the Mac sleeps).
+local function grow(spans, minute, kind)
+  local last = spans[#spans]
+  if last and last[3] == kind and minute - last[2] <= 2 and minute >= last[2] then
+    last[2] = minute
+  else
+    spans[#spans + 1] = { minute, minute, kind }
+  end
+end
+
+function core.dayUpdate(day, worktrees, minute)
+  day.rows = day.rows or {}
+  day.waiting = day.waiting or {}
+  day.working = day.working or {}
+  local anyWaiting, anyWorking = false, false
+  for _, worktree in ipairs(worktrees or {}) do
+    local lead = "idle"
+    for _, agent in ipairs(worktree.agents or {}) do
+      if agent.bucket == "attention" then lead = "attention"
+      elseif agent.bucket == "working" and lead ~= "attention" then lead = "working" end
+    end
+    if lead ~= "idle" then
+      local row = day.rows[worktree.id]
+      if not row then
+        row = { name = worktree.repo ~= "" and worktree.repo or worktree.name, branch = worktree.name, spans = {} }
+        day.rows[worktree.id] = row
+      end
+      grow(row.spans, minute, lead == "attention" and "a" or "w")
+      anyWaiting = anyWaiting or lead == "attention"
+      anyWorking = anyWorking or lead == "working"
+    end
+  end
+  if anyWaiting then grow(day.waiting, minute, "a") end
+  if anyWorking then grow(day.working, minute, "w") end
+end
+
+--- Minutes covered by a list of spans (each span counts its end minute).
+function core.spanMinutes(spans)
+  local total = 0
+  for _, span in ipairs(spans or {}) do total = total + span[2] - span[1] + 1 end
+  return total
+end
+
+--- The day for GET /api/day: the busiest `limit` rows first, and the two totals.
+function core.dayView(day, minute, limit)
+  local rows = {}
+  for _, row in pairs(day.rows or {}) do rows[#rows + 1] = row end
+  table.sort(rows, function(a, b) return core.spanMinutes(a.spans) > core.spanMinutes(b.spans) end)
+  local out = {}
+  for i = 1, math.min(limit, #rows) do out[i] = { name = rows[i].name, branch = rows[i].branch, spans = rows[i].spans } end
+  return { date = day.date, now = minute, waited = core.spanMinutes(day.waiting), worked = core.spanMinutes(day.working),
+    rows = out }
+end
+
 --- CPU busy percent between two hs.host.cpuUsageTicks() samples (their `overall` tables); nil without a previous.
 function core.cpuPercent(previous, current)
   if not previous or not current then return nil end
