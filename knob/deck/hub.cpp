@@ -4,7 +4,7 @@
 // Behind the list the Earth turns (globe.cpp).
 #include "deck.h"
 
-static const App *const APPS[] = {&app_deck, &app_timer, &app_settings};
+static const App *const APPS[] = {&app_deck, &app_timer, &app_clock, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -170,6 +170,7 @@ String hub_report()
 {
   if (buddy_is_shown()) return buddy_report();
   if (current == &app_timer) return "Timer " + timer_report();
+  if (current == &app_clock) return "Clock " + clock_report();
   return current ? String(current->name) : "hub" + globe_report();
 }
 

@@ -673,6 +673,8 @@ static void loop_tick(lv_timer_t *)
   agent_page_tick();
   settings_tick();
   timer_tick();
+  clock_tick();
+  tz_persist();
   hub_tick();
   banner_tick();
   motion(now);
@@ -742,6 +744,7 @@ extern "C" void ui_init(void)
   settings_page_create();
   agent_page_create();
   timer_create();
+  clock_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it
   buddy_create();  // last: the screensaver covers everything

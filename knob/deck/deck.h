@@ -49,6 +49,13 @@ struct Command {
 
 enum LinkKind { LINK_NONE, LINK_BLE, LINK_USB, LINK_WIFI };
 
+// GET /api/mac via the relay's M line: the Clock and the Mac remote. -1: not known.
+struct MacStatus {
+  int volume = -1, battery = -1, cpu = -1;
+  bool muted = false, charging = false;
+  uint32_t at = 0;  // millis() of the last M line; 0: never
+};
+
 struct Shared {
   std::vector<Worktree> list;
   uint32_t version = 0;
@@ -59,6 +66,7 @@ struct Shared {
   String status = "starting…";
   LinkKind link = LINK_NONE;
   std::deque<Command> commands;
+  MacStatus mac;
 };
 
 extern SemaphoreHandle_t shared_mux;
@@ -73,6 +81,8 @@ void link_init();
 void push_command(JsonDocument &body);           // any /api/cmd body
 void push_simple(const char *cmd, const String &id = "", const String &pane = "");
 void set_status(bool online, const String &text);
+int tz_offset_min();  // the Mac's UTC offset, from the M line, kept in NVS for the Clock offline
+void tz_persist();    // LVGL task only: saves a new offset to NVS
 String status_problem();  // the status line, only when something is wrong (user: «тільки якщо є помилка»)
 bool apply_state(const String &body, const String &via);
 bool apply_detail(const String &body);
@@ -147,7 +157,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer;
+extern const App app_deck, app_settings, app_timer, app_clock;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -178,6 +188,11 @@ String buddy_report();
 void timer_create();
 void timer_tick();  // every frame, shown or not: it runs in the background
 String timer_report();
+
+// app_clock.cpp
+void clock_create();
+void clock_tick();
+String clock_report();
 
 // banner.cpp — needs-you / done of an agent while orca-deck is not on screen
 void banner_create();

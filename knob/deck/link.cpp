@@ -2,6 +2,7 @@
 // Priority: BLE → USB → Wi-Fi. BLE and USB carry relay lines (knob/relay.py): S state, K keepalive,
 // D agent detail, A ack down; C command up. Wi-Fi talks HTTP to the bridge itself (link_wifi.cpp).
 #include "deck.h"
+#include <Preferences.h>
 #include <sys/time.h>
 
 SemaphoreHandle_t shared_mux;
@@ -135,6 +136,53 @@ static void sync_clock(const String &body)
   settimeofday(&set, nullptr);
 }
 
+static int tz_min = INT32_MIN;  // INT32_MIN: not loaded from NVS yet
+static volatile bool tz_dirty = false;
+
+int tz_offset_min()
+{
+  if (tz_min == INT32_MIN) {
+    Preferences prefs;
+    prefs.begin("deck", true);
+    tz_min = prefs.getInt("tz", 0);
+    prefs.end();
+  }
+  return tz_min;
+}
+
+static void apply_mac(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  MacStatus mac;
+  mac.volume = doc["volume"] | -1;
+  mac.battery = doc["battery"] | -1;
+  mac.cpu = doc["cpu"] | -1;
+  mac.muted = doc["muted"] | false;
+  mac.charging = doc["charging"] | false;
+  mac.at = millis();
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  shared.mac = mac;
+  xSemaphoreGive(shared_mux);
+  int tz = doc["tz"] | tz_offset_min();
+  if (tz != tz_offset_min()) {
+    tz_min = tz;
+    tz_dirty = true;  // saved by the LVGL task: this one's stack is in PSRAM, and a flash write turns PSRAM off
+  }
+}
+
+// From the LVGL task (internal-RAM stack) only: an NVS write from a link task asserted in cache_utils.c and the
+// knob rebooted every 3 s.
+void tz_persist()
+{
+  if (!tz_dirty) return;
+  tz_dirty = false;
+  Preferences prefs;
+  prefs.begin("deck", false);
+  prefs.putInt("tz", tz_min);
+  prefs.end();
+}
+
 void handle_line(const String &line, LinkKind via)
 {
   if (line.length() < 2 || line[1] != ' ') {
@@ -152,6 +200,8 @@ void handle_line(const String &line, LinkKind via)
     apply_state(body, link_name(via));
   } else if (kind == 'D') {
     apply_detail(body);
+  } else if (kind == 'M') {
+    apply_mac(body);
   } else if (kind == 'T' && via == LINK_USB) {
     ui_test_enqueue(body);  // test input over the cable only: it needs physical access
   } else if (kind == 'A') {

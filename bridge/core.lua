@@ -221,10 +221,32 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil
+end
+
+--- The knob's Mac remote (cmd "mac"): what `action` may be.
+core.MAC_ACTIONS = { volume = true, mute = true, play = true, next = true, prev = true }
+
+--- Why a mac command cannot run, or nil when it can. `volume` takes `value`: a step (-100…100, percent points).
+function core.macProblem(message)
+  if not core.MAC_ACTIONS[message.action] then return "mac needs action volume|mute|play|next|prev" end
+  if message.action == "volume" then
+    local v = tonumber(message.value)
+    if not v or v < -100 or v > 100 then return "volume needs a value step from -100 to 100" end
+  end
+  return nil
+end
+
+--- CPU busy percent between two hs.host.cpuUsageTicks() samples (their `overall` tables); nil without a previous.
+function core.cpuPercent(previous, current)
+  if not previous or not current then return nil end
+  local active = (current.active or 0) - (previous.active or 0)
+  local idle = (current.idle or 0) - (previous.idle or 0)
+  if active + idle <= 0 then return nil end
+  return math.floor(100 * active / (active + idle) + 0.5)
 end
 
 --- Longest id Orca takes for an item or an option (AGENT_SESSION_RESPONSE_OPTION_ID_MAX_LENGTH).

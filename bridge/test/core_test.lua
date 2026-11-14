@@ -322,6 +322,27 @@ test("commandRefusal: say needs the token, so the unauthenticated websocket may 
   eq(core.commandRefusal("go", "ws"), nil)
 end)
 
+test("commandRefusal: mac needs the token too (any web page can open the websocket)", function()
+  eq(core.commandRefusal("mac", "ws"), "mac needs the bearer token: use POST /api/cmd")
+  eq(core.commandRefusal("mac", "http 127.0.0.1"), nil)
+end)
+
+test("macProblem: known actions; volume takes a step within ±100", function()
+  eq(core.macProblem({ action = "play" }), nil)
+  eq(core.macProblem({ action = "mute" }), nil)
+  eq(core.macProblem({ action = "volume", value = -2 }), nil)
+  eq(core.macProblem({ action = "volume", value = "4" }), nil)
+  eq(core.macProblem({ action = "volume" }), "volume needs a value step from -100 to 100")
+  eq(core.macProblem({ action = "volume", value = 101 }), "volume needs a value step from -100 to 100")
+  eq(core.macProblem({ action = "shutdown" }), "mac needs action volume|mute|play|next|prev")
+end)
+
+test("cpuPercent: busy share between two samples; nil without a previous one", function()
+  eq(core.cpuPercent(nil, { active = 10, idle = 90 }), nil)
+  eq(core.cpuPercent({ active = 100, idle = 900 }, { active = 130, idle = 970 }), 30)
+  eq(core.cpuPercent({ active = 5, idle = 5 }, { active = 5, idle = 5 }), nil)
+end)
+
 test("commandRefusal: answer needs the token too", function()
   eq(core.commandRefusal("answer", "ws"), "answer needs the bearer token: use POST /api/cmd")
   eq(core.commandRefusal("answer", "http 192.168.31.83"), nil)

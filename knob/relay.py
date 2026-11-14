@@ -10,6 +10,8 @@ Lines on the wire (one JSON object per line, UTF-8):
                                            "now" (also in S) sets the knob's clock: Wi-Fi NTP is off on BLE
   relay → knob   D {...AgentDetail...}     the agent the knob's agent page shows (protocol.md § AgentDetail)
   relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
+  relay → knob   M {volume, muted, battery, charging, cpu, tz}   the Mac (GET /api/mac) for Clock and the Mac
+                                           remote, plus tz (the Mac's UTC offset, minutes); every MAC_S, on change
   knob → relay   C {"cmd": ...}            a command for /api/cmd; {"cmd": "detail", "id"} stays here and
                                            picks the agent whose detail the relay polls ("" stops it);
                                            {"cmd": "hello"} (KnobRelay.app, on a BLE connect) resends S and D
@@ -42,6 +44,7 @@ POLL_S = 1.0
 FULL_STATE_S = 30.0  # a full S even without a change, in case a line was lost
 TEXT_CHARS = 100
 MESSAGE_CHARS = 1200
+MAC_S = 2.0  # GET /api/mac: CPU is measured between two calls, so not much faster
 
 
 def log(text):
@@ -94,6 +97,7 @@ class Link:
         self.last_detail = None
         self.last_state = None
         self.last_full = 0.0
+        self.last_mac = None
 
     def send(self, data):
         with self.lock:
@@ -114,7 +118,7 @@ class Link:
             self.last_detail = None
             return
         if command.get("cmd") == "hello":  # a fresh BLE connection: send everything again at once
-            self.last_state = self.last_detail = None
+            self.last_state = self.last_detail = self.last_mac = None
             return
         try:
             ack = bridge("POST", "/api/cmd", command)
@@ -123,9 +127,12 @@ class Link:
         log(f"{self.name}: cmd {command.get('cmd')} → ok={ack.get('ok')} {ack.get('note') or ''}")
         self.send(encode("A", ack))
 
-    def tick(self, state_line):
-        """Called once per poll with the encoded state."""
+    def tick(self, state_line, mac_line=None):
+        """Called once per poll with the encoded state (and the Mac line, when there is one)."""
         now = time.time()
+        if mac_line and mac_line != self.last_mac:
+            self.send(mac_line)
+            self.last_mac = mac_line
         if state_line != self.last_state or now - self.last_full >= FULL_STATE_S:
             # "now" goes in after the comparison: the clock alone must not count as a change.
             self.send(state_line[:-2] + f',"now":{int(now * 1000)}}}\n'.encode())
@@ -217,6 +224,7 @@ def main():
         links.append(StdioLink())
     usb = None
     last_scan = 0.0
+    mac_line, mac_at = None, 0.0
     while True:
         if args.stdio and not links[0].alive:
             sys.exit(0)  # the app closed our stdin: it restarts us with the BLE link
@@ -237,9 +245,19 @@ def main():
             log(f"bridge: {error}")
             time.sleep(POLL_S)
             continue
+        if links and time.time() - mac_at >= MAC_S:
+            mac_at = time.time()
+            try:
+                mac = bridge("GET", "/api/mac")
+                payload = {k: mac[k] for k in ("volume", "muted", "battery", "charging", "cpu") if k in mac}
+                payload["tz"] = time.localtime().tm_gmtoff // 60  # the knob keeps UTC; its Clock shows the Mac's time
+                mac_line = encode("M", payload)
+            except Exception as error:  # an older bridge without /api/mac: the knob's Clock shows the time only
+                log(f"mac: {error}")
+                mac_line = None
         for link in list(links):
             try:
-                link.tick(state_line)
+                link.tick(state_line, mac_line)
             except Exception as error:  # a write failed: the cable is out
                 log(f"{link.name}: {error}")
                 link.alive = False

@@ -454,6 +454,51 @@ local function answer(message)
   return nil
 end
 
+--- GET /api/mac: what the knob's Clock and Mac remote show. CPU is measured between two calls (the relay polls
+--- every 2 s), so the first answer has none.
+local function macStatus()
+  local out = { v = core.PROTOCOL, at = nowMs() }
+  local device = hs.audiodevice.defaultOutputDevice()
+  if device then
+    local volume = device:outputVolume() or device:volume()
+    out.volume = volume and math.floor(volume + 0.5) or nil
+    out.muted = device:outputMuted() or device:muted() or false
+    out.output = device:name()
+  end
+  out.battery = hs.battery.percentage() and math.floor(hs.battery.percentage() + 0.5) or nil
+  out.charging = hs.battery.isCharging() or hs.battery.powerSource() == "AC Power"
+  local ticks = hs.host.cpuUsageTicks()
+  local current = ticks and ticks.overall
+  out.cpu = core.cpuPercent(deckBridge.cpuTicks, current)
+  deckBridge.cpuTicks = current
+  return out
+end
+
+local MEDIA_KEYS = { play = "PLAY", next = "NEXT", prev = "PREVIOUS" }
+
+--- cmd "mac": the knob's Mac remote. Media keys go to whatever player has them, as the keyboard's would.
+local function macCommand(message)
+  local problem = core.macProblem(message)
+  if problem then return problem end
+  if MEDIA_KEYS[message.action] then
+    local key = MEDIA_KEYS[message.action]
+    hs.eventtap.event.newSystemKeyEvent(key, true):post()
+    hs.eventtap.event.newSystemKeyEvent(key, false):post()
+    return nil
+  end
+  local device = hs.audiodevice.defaultOutputDevice()
+  if not device then return "no output device" end
+  if message.action == "mute" then
+    device:setOutputMuted(not device:outputMuted())
+  else
+    local now = device:outputVolume() or device:volume() or 0
+    local volume = math.max(0, math.min(100, now + tonumber(message.value)))
+    device:setOutputVolume(volume)
+    if volume > 0 and device:outputMuted() then device:setOutputMuted(false) end
+  end
+  return nil
+end
+
 local function ack(cmd, problem, note)
   return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem or note }
 end
@@ -484,6 +529,8 @@ local function run(message, via)
     return ack(cmd, problem, problem == nil and "answering" or nil)
   elseif cmd == "send" then
     return ack(cmd, press({ mods = {}, key = "return" }))
+  elseif cmd == "mac" then
+    return ack(cmd, macCommand(message))
   end
   return ack(tostring(cmd), "unknown command")
 end
@@ -525,6 +572,8 @@ local function onApi(method, route, query, headers, body)
       return json(400, { error = "bad command" })
     end
     return json(200, run(message, "http " .. from))
+  elseif method == "GET" and route == "/api/mac" then
+    return json(200, macStatus())
   elseif method == "GET" and route == "/api/agent" then
     local detail = agentDetail(query.id)
     if not detail then return json(404, { error = "unknown agent" }) end

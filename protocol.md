@@ -170,6 +170,8 @@ Every `/api/*` request needs `Authorization: Bearer <token>`. Without it, or wit
 | `GET /api/agent?id=<agent id>` | `AgentDetail` (below); `404 {"error":"unknown agent"}` |
 | `POST /api/cmd {cmd:"say", id:<agent id>, text}` | `Ack` with `note:"sending"` — the send runs in the background; its outcome appears as `send` in `AgentDetail` |
 | `POST /api/cmd {cmd:"answer", id, itemId, revision, optionId}` | `Ack` with `note:"answering"` — answers the agent's pending question in the background; the outcome appears as `answer` in `AgentDetail` |
+| `GET /api/mac` | `{v, at, volume?, muted?, output?, battery?, charging, cpu?}` — the Mac for the knob's Clock and Mac remote: output volume 0–100 and device name, battery %, CPU busy % measured since the previous call (absent on the first) |
+| `POST /api/cmd {cmd:"mac", action, value?}` | `Ack` — `action` is `volume` (`value`: a step, −100…100 points), `mute` (toggles), `play`, `next`, `prev` (media keys, as the keyboard's). Refused on the WebSocket, like `say` |
 | `POST /api/log` body `{text}` | `{v:1, ok:true}` — appends `text` (≤ 4000 bytes) to the bridge trail. A diagnostic aid for clients without a console, such as the transport probe |
 | anything else under `/api/` | `404 {"error":"not found"}` |
 
@@ -263,6 +265,7 @@ Relay lines, one JSON object each, `\n`-terminated:
 | `K` | relay → knob | `{now}` — keepalive each poll (1 s); the knob drops a link after 3 s without `S` / `K`. `now` (epoch ms, also in `S`) sets the knob's clock: NTP runs only on Wi-Fi |
 | `D` | relay → knob | `AgentDetail` trimmed to `id, bucket, next, question, message (≤1200)`; sent when it changes |
 | `A` | relay → knob | the `/api/cmd` answer (`Ack`) |
+| `M` | relay → knob | `{volume, muted, battery, charging, cpu, tz}` from `GET /api/mac` every 2 s, sent on a change; `tz` is the Mac's UTC offset in minutes (the knob keeps UTC and saves `tz` in NVS, so its Clock is right offline) |
 | `C` | knob → relay | an `/api/cmd` body (`go`, `enter`, `send`, `say`, `answer`); `{cmd:"detail", id}` stays in the relay and picks the agent whose `AgentDetail` it polls (`""` stops); `{cmd:"hello"}` (KnobRelay.app on each BLE connect) makes it resend `S` and `D` at once |
 
 ## ntfy
