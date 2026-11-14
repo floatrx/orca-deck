@@ -560,4 +560,14 @@ test("wifiOf: WPA rules, no duplicates, at most 8", function()
   eq(#core.wifiOf(nil), 0)
 end)
 
+test("wifiWith: adds first, replaces the same SSID, checks WPA rules", function()
+  local list = { { ssid = "home", pass = "12345678" }, { ssid = "cafe", pass = "abcdefgh" } }
+  local out = core.wifiWith(list, "cafe", "newpass12")
+  eq(#out, 2); eq(out[1].ssid, "cafe"); eq(out[1].pass, "newpass12"); eq(out[2].ssid, "home")
+  local _, problem = core.wifiWith(list, "x", "short")
+  eq(problem, "a Wi-Fi password is 8–63 characters (or none for an open network)")
+  eq(select(2, core.wifiWith(list, "", "12345678")), "the network name must be 1–32 bytes")
+  eq(core.commandRefusal("wifi_add", "ws"), "wifi_add needs the bearer token: use POST /api/cmd")
+end)
+
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))

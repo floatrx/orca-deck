@@ -781,6 +781,52 @@ local function prCommand(message)
   return nil
 end
 
+-- The knob's Wi-Fi networks (.work/plans/knob-wifi.md): ~/.config/orca-deck/wifi.json, served on this localhost port
+-- only — it carries passwords, so never on 7353 (LAN, tunnel). The relay brings it to the knob over BLE.
+local WIFI_FILE = os.getenv("HOME") .. "/.config/orca-deck/wifi.json"
+
+local function wifiNetworks()
+  local ok, doc = pcall(hs.json.decode, readFile(WIFI_FILE) or "")
+  return core.wifiOf(ok and doc or nil)
+end
+
+--- cmd "wifi_add" (the knob's Settings → "Add the Mac's Wi-Fi"): asks on the Mac, in Hammerspoon's own dialogs, for
+--- the network (prefilled when macOS tells it: Location Services for Hammerspoon) and its password (a secure field),
+--- then writes wifi.json (mode 600). The relay's next W line takes it to the knob. Neither goes to the trail.
+local function wifiAdd()
+  if deckBridge.wifiAsking then return "the Mac is asking already" end
+  deckBridge.wifiAsking = true
+  hs.timer.doAfter(0.2, function()  -- the dialogs are modal: never inside the HTTP answer
+    local ok, problem = pcall(function()
+      hs.focus()
+      local ssid = hs.wifi.currentNetwork()
+      local button, typed = hs.dialog.textPrompt("Knob: add a Wi-Fi network",
+        "The network for the knob (2.4 GHz). macOS hides the current one's name from Hammerspoon unless it may use Location Services.",
+        ssid or "", "Next", "Cancel")
+      if button ~= "Next" then return "cancelled" end
+      ssid = typed:match("^%s*(.-)%s*$")
+      local saved, pass = hs.dialog.textPrompt("Knob: Wi-Fi password", "For \"" .. ssid .. "\". It stays on this Mac and the knob.",
+        "", "Save", "Cancel", true)
+      if saved ~= "Save" then return "cancelled" end
+      local current = select(2, pcall(hs.json.decode, readFile(WIFI_FILE) or ""))
+      local list, why = core.wifiWith(type(current) == "table" and current or {}, ssid, pass)
+      if not list then
+        hs.dialog.blockAlert("Knob: not saved", why)
+        return why
+      end
+      local file = io.open(WIFI_FILE, "w")
+      if not file then return "cannot write wifi.json" end
+      file:write(hs.json.encode(list, true))
+      file:close()
+      os.execute("chmod 600 '" .. WIFI_FILE .. "'")
+      return nil
+    end)
+    deckBridge.wifiAsking = false
+    trail("wifi_add → " .. (not ok and tostring(problem) or problem or "saved"))
+  end)
+  return nil
+end
+
 local function ack(cmd, problem, note)
   return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem or note }
 end
@@ -819,6 +865,9 @@ local function run(message, via)
     return ack(cmd, focusCommand(message))
   elseif cmd == "pr" then
     return ack(cmd, prCommand(message))
+  elseif cmd == "wifi_add" then
+    local problem = wifiAdd()
+    return ack(cmd, problem, problem == nil and "asking on the Mac" or nil)
   end
   return ack(tostring(cmd), "unknown command")
 end
@@ -891,15 +940,6 @@ local function onRemoteRequest(method, target, headers, body)
 end
 
 --- Port 7352, localhost only: /api/* and the mock page (the WebSocket is attached in serve()).
--- The knob's Wi-Fi networks (.work/plans/knob-wifi.md): ~/.config/orca-deck/wifi.json, served on this localhost port
--- only — it carries passwords, so never on 7353 (LAN, tunnel). The relay brings it to the knob over BLE.
-local WIFI_FILE = os.getenv("HOME") .. "/.config/orca-deck/wifi.json"
-
-local function wifiNetworks()
-  local ok, doc = pcall(hs.json.decode, readFile(WIFI_FILE) or "")
-  return core.wifiOf(ok and doc or nil)
-end
-
 local function onLocalRequest(method, target, headers, body)
   local route, query = core.parseTarget(target)
   if method == "GET" and route == "/api/wifi" then

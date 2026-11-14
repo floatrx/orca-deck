@@ -19,8 +19,10 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define FORGET_HOLD_MS 2000
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
-enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER };
-static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER,
+           ROW_WIFI_ADD };
+static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+static uint32_t wifi_asked_at = 0;  // "Add the Mac's Wi-Fi" was tapped: the password is asked on the Mac
 static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
 static const std::vector<int> *rows = &SYSTEM_ROWS;
@@ -90,7 +92,7 @@ void settings_apply()
 static String row_name(int row)
 {
   static const char *NAMES[] = {"Connection", "Wi-Fi", "Hide inactive", "Hide completed", "Haptics", "Sound",
-                                "Brightness", "Screensaver"};
+                                "Brightness", "Screensaver", "Add the Mac's Wi-Fi"};
   return NAMES[row];
 }
 
@@ -109,6 +111,9 @@ static String row_value(int row)
     case ROW_HIDE_COMPLETED: return settings.hide_completed == 0 ? "off" : settings.hide_completed == 1 ? "1 h" : "1 day";
     case ROW_HAPTICS: return settings.haptics ? String(settings.haptics) + "/3" : "off";
     case ROW_SOUND: return settings.sound == 0 ? "off" : settings.sound == 1 ? "quiet" : "on";
+    case ROW_WIFI_ADD:
+      if (wifi_asked_at && millis() - wifi_asked_at < 30000) return "type the password on the Mac";
+      return String(wifi_store_count()) + " saved · tap to add";
     case ROW_BRIGHTNESS: return editing ? "- " + String(settings.brightness) + "% +" : String(settings.brightness) + "%";
     case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
   }
@@ -130,8 +135,8 @@ void settings_page_refresh()
     return;
   }
   set_text(hint, (*rows)[focus] == ROW_LINK ? "hold 2 s: forget the paired relay"
-                 : deck                     ? "tap to change · swipe left: back"
-                                            : "tap to change · swipe down: home");
+                 : deck                     ? "tap: change · swipe left: back"
+                                            : "tap: change · swipe down: hub");
 }
 
 void settings_page_turn(int step)
@@ -158,6 +163,15 @@ void settings_page_tap()
     case ROW_HIDE_COMPLETED: settings.hide_completed = (settings.hide_completed + 1) % 3; break;
     case ROW_HAPTICS: settings.haptics = (settings.haptics + 1) % 4; break;
     case ROW_SOUND: settings.sound = (settings.sound + 1) % 3; break;
+    case ROW_WIFI_ADD: {  // the bridge asks the password in a dialog on the Mac; the W line brings the network here
+      JsonDocument cmd;
+      cmd["cmd"] = "wifi_add";
+      push_command(cmd);
+      wifi_asked_at = millis();
+      haptic_click();
+      settings_page_refresh();
+      return;
+    }
     case ROW_BRIGHTNESS:  // tap: the crown sets it; tap again: done (saved)
       editing = !editing;
       if (!editing) save();
@@ -221,7 +235,7 @@ void settings_page_create()
     names[slot] = make_label(page, mid ? &deck_bold_16 : &deck_14, mid ? C_INK : C_MUTED, y - 9, 240);
     values[slot] = make_label(page, mid ? &deck_16 : &deck_14, mid ? C_WORKING : 0x55534F, y + 10, 240);
   }
-  hint = make_label(page, &deck_14, C_MUTED, 122, 210);
+  hint = make_label(page, &deck_14, C_MUTED, 122, 244);  // ~250 px of screen at this height
 }
 
 void settings_page_show(bool show, bool deck_rows)

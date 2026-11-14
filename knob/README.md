@@ -46,6 +46,11 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   the left half of the rim and the 5 h window on the right (both fill from the bottom; orange past 80 %, red past
   95 %), their % and reset at the bottom; three counts (needs you · working · done); the Mac's time, battery and
   CPU. Any touch goes back to the hub. Never over Claude, Clock or the apps that are glanced at.
+- **Wi-Fi** (Settings → Wi-Fi = fallback): when BLE is gone 10 s, the knob joins the strongest network it knows
+  (up to 8, kept on the knob) and finds the bridge at the Mac's LAN address, learnt over BLE. Networks come from
+  `~/.config/orca-deck/wifi.json` (`[{"ssid": "…", "pass": "…"}]`, mode 600, served on localhost only), or
+  Settings → "Add the Mac's Wi-Fi": a tap asks the network and its password in a dialog on the Mac. 2.4 GHz only;
+  a "<name>-5G" network is tried as "<name>" too. `secrets.h`'s network stays as a seed.
 - **Control Center**: swipe up in the hub or any app but Claude (there it is the next agent) — a sheet slides up
   with four tiles: Mic (mute), Focus, Sound, Brightness; Claude's limits on top, the Mac's battery and CPU below.
   Crown + tap, or a tap on a tile; swipe down closes it. A tap on Sound or Brightness gives it the crown (the

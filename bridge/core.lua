@@ -221,7 +221,7 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus" or cmd == "pr") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus" or cmd == "pr" or cmd == "wifi_add") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil
@@ -625,6 +625,20 @@ function core.wifiOf(doc)
       seen[ssid] = true
       out[#out + 1] = { ssid = ssid, pass = pass }
     end
+  end
+  return out
+end
+
+--- wifi.json with `ssid` added (or its password replaced), first in the list; nil and a problem when it breaks
+--- the WPA rules. An older entry beyond WIFI_MAX falls off the end.
+function core.wifiWith(list, ssid, pass)
+  if type(ssid) ~= "string" or #ssid < 1 or #ssid > 32 then return nil, "the network name must be 1–32 bytes" end
+  if type(pass) ~= "string" or (#pass > 0 and (#pass < 8 or #pass > 63)) then
+    return nil, "a Wi-Fi password is 8–63 characters (or none for an open network)"
+  end
+  local out = { { ssid = ssid, pass = pass } }
+  for _, n in ipairs(core.wifiOf(list)) do
+    if n.ssid ~= ssid and #out < core.WIFI_MAX then out[#out + 1] = n end
   end
   return out
 end
