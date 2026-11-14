@@ -1,6 +1,6 @@
 // orca-deck, an app in the hub (hub.cpp): the main page and its pages, as Apex (watch/Apex/ContentView.swift):
 // its settings (swipe right) · the main page · the agent page (swipe left). Swipe down goes to the hub.
-// Main page: crown → workspace (Orca follows after 1 s of rest) · tap → enter · hold → dictate to the agent
+// Main page: crown → workspace (Orca follows after 1 s of rest) · tap → Orca shows this agent (go + enter) · hold → dictate to the agent
 // (dictate.cpp) · swipe up → next agent · double tap → send. Selection rules come from Apex's Selection (watch/ApexCore/.../Selection.swift).
 #include "deck.h"
 #include <map>
@@ -255,7 +255,7 @@ static void render()
 
   if (!n) {
     set_text(state_label, "");
-    set_text(name_label, "orca-deck");
+    set_text(name_label, "Claude");
     set_text(meta_label, "");
     set_text(detail_label, "");
     set_text(counter_label, "");
@@ -714,7 +714,9 @@ static void loop_tick(lv_timer_t *)
   if (commit_at && now >= commit_at) commit();
   if (single_tap_at && now >= single_tap_at) {
     single_tap_at = 0;
-    if (commit_at) commit();
+    // Always `go` first: the knob can be on an agent Orca is not showing (it turns by itself after a send or to a
+    // fresh done, without moving Orca) — a tap that only raised Orca left the user stuck (user, 2026-11-14).
+    commit();
     push_simple("enter");  // the hub ticked when the finger tapped: a second buzz 260 ms later felt like a stutter
   }
   agent_page_tick();
@@ -723,6 +725,7 @@ static void loop_tick(lv_timer_t *)
   clock_tick();
   mac_tick();
   jog_tick();
+  wheel_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -790,7 +793,7 @@ extern "C" void ui_init(void)
   status_label = make_label(screen, &deck_14, C_MUTED, 112, 200);
   lv_obj_set_style_text_letter_space(summary, 1, 0);
   lv_obj_set_style_text_letter_space(state_label, 2, 0);
-  set_text(name_label, "orca-deck");
+  set_text(name_label, "Claude");
 
   settings_page_create();
   agent_page_create();
@@ -798,6 +801,7 @@ extern "C" void ui_init(void)
   clock_create();
   mac_create();
   jog_create();
+  wheel_create();
   dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it

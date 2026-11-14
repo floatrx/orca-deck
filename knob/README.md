@@ -17,8 +17,8 @@ fallbacks.
 ## Hub and apps
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
-**swipe down in any app goes back to the hub**. Apps: **Claude** (orca-deck — its badge is Clawd on black, acting out the loudest agent state; its row reads
-"2 done · 5h 34% · wk 79%"), Timer, Mac, Jog, Clock, Settings (`hub.cpp` holds the list; a new app is
+**swipe down in any app goes back to the hub**. Apps: **Claude** (the agents app — called "Claude" everywhere on the knob; its badge is Clawd on black, acting out the loudest agent state; its row reads
+"2 done · 5h 34% · wk 79%"), Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
@@ -43,8 +43,8 @@ MediaRemote, so the bridge asks Music, Spotify and the YouTube tabs of Chrome / 
 let Hammerspoon control the browser). The hub row shows it too. The Clock's badge is a live analog face.
 
 **Dictation** (orca-deck): a hold on an agent starts it (a click); let go and speak — the ring breathes with your
-voice; **tap when done** (a swipe cancels). The relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in `~/.config/orca-deck/openai.key`, mode 600, never in
-the repo) and the text comes back — **tap sends it to the agent** (`say`), a swipe drops it. 60 s at most. The audio
+voice; **tap when done** (a swipe while listening cancels — the only way not to send). The relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in `~/.config/orca-deck/openai.key`, mode 600, never in
+the repo) and the text **goes to the agent at once** (`say`, no confirming tap — the user's call), shown as SENT for 1.2 s. 60 s at most. The audio
 streams while you speak (IMA ADPCM, 8 KB/s over BLE), so the text is back ~1 s after the tap. The transcript never goes to the relay's log.
 
 **Microphone** (spike): PDM, clock GPIO45 / data GPIO46, on I2S0 (sound plays on I2S1). `T mic <s>` records into
@@ -55,6 +55,10 @@ DC offset ~1500 (subtract it).
 scrub ⌘Z / ⇧⌘Z, Tabs ⌃Tab, Zoom ⌘= / ⌘−, Frame ← / →), the crown acts, a tap resets the count (Zoom: ⌘0). A ruler
 round the rim turns one tick per detent; the centre counts ("+5 redos", "-14 undos"). Steps go in one `jog`
 command every 80 ms. **It acts on whatever app is in front** — test it with Scroll only.
+
+**Wheel** (Decision Wheel): flick the crown (or tap) to spin; friction slows it, a haptic tick at every segment
+slows with it, and the stop lands on a click with the winner in the middle. Swipe picks the list: Lunch, Break,
+Yes / No, Dice. Knob only.
 
 **Boot**: the Earth turns with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades
 in from the centre. **Settings → Screensaver**: off / 5 / 10 / 15 (default) / 20 / 25 / 30 s / 1 min.
@@ -72,7 +76,7 @@ Orca follows), a tap below it goes to the app under it.
 | | Main | Agent page | orca-deck settings |
 |---|---|---|---|
 | crown | workspace (Orca follows after 1 s) | row | row |
-| tap | `enter` | tick a variant / Send / answer | change the value |
+| tap | Orca shows this agent (`go` + `enter`) | tick a variant / Send / answer | change the value |
 | hold | **dictate** to the agent (below) | — | — |
 | swipe up | next agent of the workspace | — | — |
 | double tap | `send` (Enter in Orca) | — | — |
@@ -134,9 +138,9 @@ DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) �
 **`turn` on orca-deck's main page moves Orca** (a `go` after 1 s): wait for the state (`wait 8` after boot) before
 `swipe left`, or the crown meant for the agent page switches the user's active worktree.
 
-**A dictation test ends with `swipe left`, never `tap`**: a tap on the result sends the transcript to the agent on
-screen for real (2026-11-14: a test tap sent «Перевіряємо.» into a live session). To test the send, select a scratch
-chat session first (`select <worktree>|<agent>`).
+**A dictation test cancels with `swipe left` while listening — never `tap`**: since the auto-send, the tap that
+ends a dictation sends the transcript to the agent on screen for real (2026-11-14: a test tap sent «Перевіряємо.»
+into a live session). To test the send, select a scratch chat session first (`select <worktree>|<agent>`).
 
 **`hold 2500` on Settings → Connection forgets the bond for real** — the Mac keeps its key and every connect fails
 with "Peer removed pairing information". Re-pair without rebuilding the app (a rebuild makes macOS ask for

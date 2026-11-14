@@ -192,7 +192,7 @@ void settings_page_show(bool show, bool deck_rows)
   if (show) {
     rows = deck_rows ? &DECK_ROWS : &SYSTEM_ROWS;
     focus = 0;
-    set_text(title, deck_rows ? "ORCA-DECK" : "SETTINGS");
+    set_text(title, deck_rows ? "CLAUDE" : "SETTINGS");
     lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(page);
     forget_hold_from = 0;

@@ -171,7 +171,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -221,6 +221,11 @@ String mac_report();
 void jog_create();
 void jog_tick();
 String jog_report();
+
+// app_wheel.cpp
+void wheel_create();
+void wheel_tick();
+String wheel_report();
 
 // mic.cpp — the PDM microphone (spike: T mic <seconds>)
 void mic_test(int seconds);

@@ -1,8 +1,8 @@
 // Dictation in orca-deck (user, 2026-11-14): a hold on an agent starts it, then the finger is free — speak, and tap
 // when done («тап на початок і тап коли диктовку закінчено»; a plain tap cannot start it: in orca-deck it is
-// `enter`). The relay has the audio transcribed (OpenAI gpt-4o-transcribe); the text comes back for a look — tap
-// sends it to the agent (`say`), a swipe drops it. The send always waits for that tap: the sessions run with
-// bypassed permissions.
+// `enter`). The relay has the audio transcribed (OpenAI gpt-4o-transcribe) and the text goes to the agent at once
+// (`say`) — no confirming tap («після транскрибації … автоматично відправляти промт»); the screen shows it as SENT
+// for a moment. A swipe while listening cancels: the only way to not send.
 // .work/notes/knob-dictation.md
 #include "deck.h"
 #include <math.h>
@@ -39,9 +39,9 @@ static void show_stage(Stage next)
   wait ? lv_obj_clear_flag(spinner, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
   rec ? lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
   done || failed ? lv_obj_clear_flag(text_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(text_label, LV_OBJ_FLAG_HIDDEN);
-  set_text(state_label, rec ? "LISTENING" : wait ? "TRANSCRIBING" : done ? "SEND THIS?" : failed ? "NOT SENT" : "");
+  set_text(state_label, rec ? "LISTENING" : wait ? "TRANSCRIBING" : done ? "SENT" : failed ? "NOT SENT" : "");
   lv_obj_set_style_text_color(state_label, lv_color_hex(rec ? C_ATTENTION : done ? C_DONE : failed ? C_ATTENTION : C_WORKING), 0);
-  set_text(hint_label, rec ? "tap when done · swipe: cancel" : done ? "tap: send · swipe: drop" : failed ? "tap: close" : "");
+  set_text(hint_label, rec ? "tap when done · swipe: cancel" : failed ? "tap: close" : "");
   if (done) set_text(text_label, text);
 }
 
@@ -143,14 +143,24 @@ void dictate_tick()
       got.trim();
       if (error.length()) fail(error);
       else if (!got.length()) fail("heard nothing");
-      else {
+      else {  // straight to the agent: no confirming tap (user, 2026-11-14)
         text = got;
+        JsonDocument cmd;
+        cmd["cmd"] = "say";
+        cmd["id"] = agent_id;
+        cmd["text"] = text;
+        push_command(cmd);
         haptic_click(2);
         show_stage(RESULT);
+        sent_at = millis();
       }
     } else if (millis() - sent_at > TRANSCRIBE_WAIT_MS) {
       fail("no answer from the Mac");
     }
+  } else if (stage == RESULT && millis() - sent_at > 1200) {  // SENT shown long enough: back, as after Send
+    String agent = agent_id;
+    dictate_close();
+    ui_after_send(agent);
   }
 }
 
@@ -161,13 +171,7 @@ void dictate_tap()
     sent_at = millis();
     haptic_click();
     show_stage(TRANSCRIBING);
-  } else if (stage == RESULT) {
-    JsonDocument cmd;
-    cmd["cmd"] = "say";
-    cmd["id"] = agent_id;
-    cmd["text"] = text;
-    push_command(cmd);
-    haptic_click(2);
+  } else if (stage == RESULT) {  // already sent: a tap just goes back sooner
     String agent = agent_id;
     dictate_close();
     ui_after_send(agent);
