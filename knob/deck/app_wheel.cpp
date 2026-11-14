@@ -17,11 +17,17 @@ struct List {
   const char *name;
   const char *items[MAX_SEG];
 };
+// The lists are content, in Ukrainian as the user speaks (user, 2026-11-14: «додамо ще режими … так чи ні …
+// покрути ще»). A segment named AGAIN spins the wheel once more by itself when it wins.
+static const char *const AGAIN = "Покрути ще";
 static const List LISTS[] = {
-    {"Lunch", {"Pizza", "Sushi", "Burger", "Borscht", "Shawarma", "Salad", nullptr}},
-    {"Break", {"Walk", "Coffee", "Stretch", "Water", "Music", "Eyes off", nullptr}},
-    {"Yes / No", {"Yes", "No", "Yes", "No", nullptr}},
-    {"Dice", {"1", "2", "3", "4", "5", "6", nullptr}},
+    {"Так / Ні", {"Так", "Ні", "Так", "Ні", "Покрути ще", nullptr}},
+    {"Магічна куля", {"Так", "Ні", "Можливо", "Точно так", "Навряд", "Пізніше", "Звісно", "Ні за що"}},
+    {"Мерджимо?", {"Так", "Ні", "Після рев'ю", "Спершу тести", "Покрути ще", nullptr}},
+    {"Монетка", {"Орел", "Решка", nullptr}},
+    {"Обід", {"Піца", "Суші", "Бургер", "Борщ", "Шаурма", "Салат", nullptr}},
+    {"Перерва", {"Пройдись", "Кава", "Розминка", "Вода", "Музика", "Без екрана", nullptr}},
+    {"Кубик", {"1", "2", "3", "4", "5", "6", nullptr}},
 };
 static const int LIST_COUNT = sizeof(LISTS) / sizeof(LISTS[0]);
 static const uint32_t COLORS[MAX_SEG] = {0x4CC3FF, 0xFF7A1A, 0x3DDC84, 0xB18CFF, 0xFFD166, 0xFF7A9A, 0x7FD1B9, 0xD97757};
@@ -31,7 +37,7 @@ static int list = 0, count = 0;
 static float angle = 0, omega = 0;  // degrees, deg/s
 static bool spinning = false, showing_winner = false;
 static int last_seg = -1;
-static uint32_t last_frame = 0;
+static uint32_t last_frame = 0, respin_at = 0;
 
 static int count_of(int l)
 {
@@ -87,8 +93,10 @@ static void show_winner(bool on)
     lv_obj_set_style_text_color(winner_label, lv_color_hex(COLORS[w % MAX_SEG]), 0);
   }
   on ? lv_obj_clear_flag(winner_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(winner_label, LV_OBJ_FLAG_HIDDEN);
+  // "Spin again" won: show it a moment, then the wheel spins itself.
+  respin_at = on && !strcmp(LISTS[list].items[under_pointer()], AGAIN) ? millis() + 900 : 0;
   on ? lv_obj_add_flag(list_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_clear_flag(list_label, LV_OBJ_FLAG_HIDDEN);
-  set_text(hint_label, on ? "tap: again" : "flick the crown · tap: spin");
+  set_text(hint_label, on ? "tap: again · swipe: list" : "flick the crown · tap: spin");
 }
 
 static void kick(float speed)
@@ -127,6 +135,11 @@ static void swipe(lv_dir_t dir)
 // Every frame while spinning: friction, the segment ticks, the stop.
 void wheel_tick()
 {
+  if (respin_at && millis() >= respin_at) {
+    respin_at = 0;
+    kick((random(0, 2) ? 1 : -1) * random(500, 900));
+    haptic_click();
+  }
   if (!spinning || !page || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
   uint32_t now = millis();
   if (now - last_frame < 25) return;

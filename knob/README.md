@@ -70,7 +70,8 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 - **Jog** — Scroll, Undo scrub (⌘Z / ⇧⌘Z), Tabs (⌃Tab), Zoom (⌘= / ⌘−, tap ⌘0), Frame (← / →); a ruler turns one
   tick a detent, the centre counts ("-14 undos"). **It acts on whatever app is in front** — test with Scroll only.
 - **Wheel** — friction slows the spin, a haptic tick per segment slows with it, the stop lands on a click with the
-  winner. Lists: Lunch, Break, Yes / No, Dice.
+  winner. Lists (Ukrainian — content, not UI): Так / Ні, Магічна куля, Мерджимо?, Монетка, Обід, Перерва, Кубик.
+  A segment "Покрути ще" spins the wheel again by itself when it wins.
 - **Clock** — the time works offline (the relay sends the Mac's UTC offset, kept in NVS); its hub badge is a live
   analog face.
 
