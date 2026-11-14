@@ -46,8 +46,10 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   inner: 5 h) and "wk 80% · 1d 0h" under him. Any touch goes back to the hub. Never over Claude, Clock or the apps
   that are glanced at.
 - **Control Center**: swipe up in the hub or any app but Claude (there it is the next agent) — a sheet slides up
-  with four tiles: Mic (mute), Focus, Sound (the Mac's mute), Brightness (40 → 100 %); Claude's limits on top, the
-  Mac's battery and CPU below. Crown + tap, or a tap on a tile; swipe down closes it.
+  with four tiles: Mic (mute), Focus, Sound, Brightness; Claude's limits on top, the Mac's battery and CPU below.
+  Crown + tap, or a tap on a tile; swipe down closes it. A tap on Sound or Brightness gives it the crown (the
+  Mac's volume ±2 %, the screen ±5 % from 10 %), a tap again takes it back; a hold on Sound mutes the Mac.
+  Settings → Brightness works the same way: tap, crown, tap.
 - **Every gesture vibrates**: the hub ticks for a gesture its app left silent. A silent knob is first Settings →
   Haptics = off (one tap from 3).
 - The status line shows only problems (offline, a failed or dropped command). Fonts carry `→` but no `←` / `↓`:

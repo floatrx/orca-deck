@@ -1,7 +1,10 @@
 // Control Center (user, 2026-11-14: the free swipe up): the switches used most, without opening their apps.
 // Swipe up in the hub or any app but Claude (its swipe up is the next agent); swipe down closes.
-//   tiles: Mic (mute) · Focus (Mac Focus + Pomodoro) · Sound (the Mac's mute) · Brightness (40 → 100 %)
+//   tiles: Mic (mute) · Focus (Mac Focus + Pomodoro) · Sound · Brightness
 //   crown: the tile · tap: the tile under the finger (or the focused one) · top: Claude limits · bottom: the Mac
+// Sound and Brightness take the crown after a tap (user, 2026-11-14: «тапаю на звук … крутити шайбу … гучність»):
+// it sets the Mac's volume (±2 %) or the screen (±5 %, 10–100 %); a tap again, another tile or closing is done.
+// A hold on Sound mutes / unmutes the Mac.
 // It slides up from the bottom edge, as on the watch.
 #include "deck.h"
 
@@ -17,7 +20,12 @@ static lv_obj_t *page, *tiles[TILES], *icons[TILES], *labels[TILES], *mic_icon, 
 static int focus = 0;
 static bool shown = false;
 static bool sound_muted = false;
+static int editing = -1;          // the tile that has the crown (T_SOUND / T_BRIGHT); -1: the crown picks tiles
 static uint32_t sound_until = 0;
+static int volume = -1, pending = 0;  // the volume shown while the crown sets it; steps not sent yet
+static uint32_t volume_until = 0, send_at = 0;
+#define VOLUME_STEP 2
+#define SEND_MS 120
 
 bool cc_is_open() { return shown; }
 
@@ -33,20 +41,23 @@ static void paint()
   MacStatus mac = shared.mac;
   xSemaphoreGive(shared_mux);
   if (millis() >= sound_until) sound_muted = mac.muted;
+  if (millis() >= volume_until && !pending) volume = mac.volume;
   bool mic_muted = mic_is_muted();
   bool on[TILES] = {mac.at && !mic_muted, focus_is_on(), !sound_muted, true};
   uint32_t colors[TILES] = {mic_muted ? 0xFF4B4B : C_DONE, 0x8E7CFF, C_WORKING, 0xFFD166};
   String text[TILES] = {
       !mac.at ? "Mic" : mic_muted ? "Mic off" : "Mic live",
       focus_is_on() ? "Focus on" : "Focus",
-      mac.volume < 0 ? "Sound" : sound_muted ? "Muted" : String(mac.volume) + "%",
-      String(settings.brightness) + "%",
+      editing == T_SOUND ? "- " + String(max(0, volume)) + "% +" : volume < 0 ? "Sound" : sound_muted ? "Muted" : String(volume) + "%",
+      editing == T_BRIGHT ? "- " + String(settings.brightness) + "% +" : String(settings.brightness) + "%",
   };
   for (int i = 0; i < TILES; i++) {
     bool lit = on[i] || (i == T_MIC && mic_muted);  // a muted mic is news: its tile is red, not dark
     lv_obj_set_style_bg_color(tiles[i], lv_color_hex(lit ? colors[i] : 0x1C1D21), 0);
     lv_obj_set_style_bg_opa(tiles[i], lit ? (i == T_BRIGHT ? LV_OPA_30 : LV_OPA_COVER) : LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(tiles[i], lv_color_hex(i == focus ? C_INK : 0x2C2D31), 0);
+    bool edit = i == editing;  // the tile that has the crown: a thick ring in its colour
+    lv_obj_set_style_border_color(tiles[i], lv_color_hex(edit ? (i == T_SOUND ? C_INK : colors[i]) : i == focus ? C_INK : 0x2C2D31), 0);
+    lv_obj_set_style_border_width(tiles[i], edit ? 4 : 2, 0);
     uint32_t ink = lit && i != T_BRIGHT ? C_BG : C_INK;
     lv_obj_set_style_text_color(labels[i], lv_color_hex(ink), 0);
     lv_obj_set_style_text_color(icons[i], lv_color_hex(ink), 0);
@@ -85,6 +96,8 @@ void cc_close(bool quiet)
 {
   if (!shown) return;
   shown = false;
+  if (editing == T_BRIGHT) settings_save();
+  editing = -1;
   lv_anim_t a;
   lv_anim_init(&a);
   lv_anim_set_var(&a, page);
@@ -99,6 +112,23 @@ void cc_close(bool quiet)
 
 void cc_turn(int step)
 {
+  if (editing == T_BRIGHT) {
+    settings_adjust_brightness(step);
+    paint();
+    return;
+  }
+  if (editing == T_SOUND) {
+    if (volume < 0) return;
+    int next = max(0, min(100, volume + step * VOLUME_STEP));
+    if (next == volume) return;  // 0 or 100: no tick, it does not move
+    pending += next - volume;
+    volume = next;
+    volume_until = millis() + LOCAL_MS;
+    if (sound_muted && step > 0) sound_muted = false, sound_until = volume_until;  // the bridge unmutes on a raise
+    haptic_tick();
+    paint();
+    return;
+  }
   int next = focus + step;
   if (next < 0 || next >= TILES) return;
   focus = next;
@@ -108,23 +138,44 @@ void cc_turn(int step)
 
 static void act(int i)
 {
+  if (editing >= 0 && editing != i) {  // another tile: the setting is done
+    if (editing == T_BRIGHT) settings_save();
+    editing = -1;
+  }
   focus = i;
   if (i == T_MIC) {
     mic_toggle();
   } else if (i == T_FOCUS) {
     focus_toggle();
-  } else if (i == T_SOUND) {
-    JsonDocument cmd;
-    cmd["cmd"] = "mac";
-    cmd["action"] = "mute";
-    push_command(cmd);
-    sound_muted = !sound_muted;
-    sound_until = millis() + LOCAL_MS;
-    haptic_click();
-  } else {
-    settings_step_brightness();
+  } else {  // Sound / Brightness: a tap gives them the crown, a tap again takes it back
+    bool on = editing != i;
+    if (!on && i == T_BRIGHT) settings_save();
+    editing = on ? i : -1;
     haptic_click();
   }
+  paint();
+}
+
+// A hold on the Sound tile (under the finger, or focused): the Mac's mute.
+void cc_hold()
+{
+  int i = focus;
+  lv_indev_t *indev = lv_indev_get_act();
+  if (indev) {
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    lv_area_t r;
+    lv_obj_get_coords(tiles[T_SOUND], &r);
+    if (p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2) i = T_SOUND;
+  }
+  if (i != T_SOUND) return;
+  JsonDocument cmd;
+  cmd["cmd"] = "mac";
+  cmd["action"] = "mute";
+  push_command(cmd);
+  sound_muted = !sound_muted;
+  sound_until = millis() + LOCAL_MS;
+  haptic_click(2);
   paint();
 }
 
@@ -147,15 +198,25 @@ void cc_tap()
 
 void cc_tick()
 {
+  uint32_t now = millis();
+  if (pending && now - send_at >= SEND_MS) {  // the crown's volume steps, batched as the Mac remote does
+    JsonDocument cmd;
+    cmd["cmd"] = "mac";
+    cmd["action"] = "volume";
+    cmd["value"] = pending;
+    push_command(cmd);
+    pending = 0;
+    send_at = now;
+  }
   static uint32_t last = 0;
-  if (!shown || millis() - last < 500) return;
-  last = millis();
+  if (!shown || now - last < 500) return;
+  last = now;
   paint();
 }
 
 String cc_report()
 {
-  String out = String("cc focus=") + NAMES[focus];
+  String out = String("cc focus=") + NAMES[focus] + (editing >= 0 ? String(" editing=") + NAMES[editing] : "");
   for (int i = 0; i < TILES; i++) out += String(" | ") + lv_label_get_text(labels[i]);
   return out + " | " + lv_label_get_text(top_label) + " | " + lv_label_get_text(bottom_label);
 }

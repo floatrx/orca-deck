@@ -303,12 +303,17 @@ void cc_close(bool quiet = false);  // quiet: the hub goes home itself (its own 
 bool cc_is_open();
 void cc_turn(int step);
 void cc_tap();
+void cc_hold();
 void cc_tick();
 String cc_report();
 bool mic_is_muted();    // app_mic.cpp
 void mic_toggle();
 void focus_toggle();    // app_focus.cpp
-void settings_step_brightness();  // settings.cpp
+void settings_adjust_brightness(int step);  // settings.cpp: ±5 % a step, 10–100, live (not saved)
+void settings_save();
+String settings_report();
+#define BRIGHT_MIN 10
+#define BRIGHT_STEP 5
 
 // app_prs.cpp
 void prs_create();

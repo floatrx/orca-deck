@@ -196,7 +196,7 @@ static void tap()
 static void hold()
 {
   if (wake()) return;
-  if (cc_is_open()) return;
+  if (cc_is_open()) return cc_hold();
   if (current && current->hold) current->hold();
 }
 
@@ -318,6 +318,7 @@ String hub_report()
   if (buddy_is_shown()) return buddy_report();
   if (cc_is_open()) return cc_report();
   if (current == &app_timer) return "Timer " + timer_report();
+  if (current == &app_settings) return "Settings " + settings_report();
   if (current == &app_clock) return "Clock " + clock_report();
   if (current == &app_mac) return "Mac " + mac_report();
   if (current == &app_jog) return "Jog " + jog_report();

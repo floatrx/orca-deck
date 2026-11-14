@@ -39,14 +39,20 @@ void settings_load()
 }
 
 static void save();
+static bool editing = false;  // the Brightness row is taking the crown
 
-// Control Center's Brightness tile: the same 40 → 100 % steps as the Settings row, saved.
-void settings_step_brightness()
+// Brightness in 5 % steps from 10 % (user, 2026-11-14: «більше градацій»; it was 40 / 60 / 80 / 100). The crown sets
+// it, live; the caller saves once when the editing ends (one NVS write, not one a detent).
+void settings_adjust_brightness(int step)
 {
-  settings.brightness = settings.brightness >= 100 ? 40 : settings.brightness + 20;
+  int next = max(BRIGHT_MIN, min(100, (int)settings.brightness + step * BRIGHT_STEP));
+  if (next == settings.brightness) return;
+  settings.brightness = next;
   settings_apply();
-  save();
+  haptic_tick();
 }
+
+void settings_save() { save(); }
 
 static void save()
 {
@@ -96,7 +102,7 @@ static String row_value(int row)
     case ROW_HIDE_COMPLETED: return settings.hide_completed == 0 ? "off" : settings.hide_completed == 1 ? "1 h" : "1 day";
     case ROW_HAPTICS: return settings.haptics ? String(settings.haptics) + "/3" : "off";
     case ROW_SOUND: return settings.sound == 0 ? "off" : settings.sound == 1 ? "quiet" : "on";
-    case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
+    case ROW_BRIGHTNESS: return editing ? "- " + String(settings.brightness) + "% +" : String(settings.brightness) + "%";
     case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
   }
   return "";
@@ -112,6 +118,10 @@ void settings_page_refresh()
     set_text(values[slot], used ? row_value((*rows)[i]) : "");
   }
   bool deck = rows == &DECK_ROWS;
+  if (editing) {
+    set_text(hint, "crown: brightness · tap: done");
+    return;
+  }
   set_text(hint, (*rows)[focus] == ROW_LINK ? "hold 2 s: forget the paired relay"
                  : deck                     ? "tap to change · swipe left: back"
                                             : "tap to change · swipe down: home");
@@ -119,6 +129,11 @@ void settings_page_refresh()
 
 void settings_page_turn(int step)
 {
+  if (editing) {
+    settings_adjust_brightness(step);
+    settings_page_refresh();
+    return;
+  }
   int next = focus + step;
   if (next < 0 || next >= (int)rows->size()) return;
   focus = next;
@@ -136,7 +151,12 @@ void settings_page_tap()
     case ROW_HIDE_COMPLETED: settings.hide_completed = (settings.hide_completed + 1) % 3; break;
     case ROW_HAPTICS: settings.haptics = (settings.haptics + 1) % 4; break;
     case ROW_SOUND: settings.sound = (settings.sound + 1) % 3; break;
-    case ROW_BRIGHTNESS: settings.brightness = settings.brightness >= 100 ? 40 : settings.brightness + 20; break;
+    case ROW_BRIGHTNESS:  // tap: the crown sets it; tap again: done (saved)
+      editing = !editing;
+      if (!editing) save();
+      haptic_click();
+      settings_page_refresh();
+      return;
     case ROW_SAVER: {
       size_t i = 0, n = sizeof(SAVER_STEPS);
       while (i < n && SAVER_STEPS[i] != settings.saver) i++;
@@ -208,8 +228,16 @@ void settings_page_show(bool show, bool deck_rows)
     forget_hold_from = 0;
     settings_page_refresh();
   } else {
+    if (editing) save();  // left while setting it: keep what was set
+    editing = false;
     lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
   }
+}
+
+String settings_report()
+{
+  int row = (*rows)[focus];
+  return row_name(row) + "=" + row_value(row) + (editing ? " EDITING" : "") + " brightness=" + String(settings.brightness);
 }
 
 bool settings_page_open() { return page && !lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN); }
