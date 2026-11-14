@@ -10,7 +10,7 @@ Lines on the wire (one JSON object per line, UTF-8):
                                            "now" (also in S) sets the knob's clock: Wi-Fi NTP is off on BLE
   relay → knob   D {...AgentDetail...}     the agent the knob's agent page shows (protocol.md § AgentDetail)
   relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
-  relay → knob   M {volume, muted, battery, charging, cpu, tz}   the Mac (GET /api/mac) for Clock and the Mac
+  relay → knob   M {volume, muted, output, battery, charging, cpu, tz}   the Mac (GET /api/mac) for Clock and the Mac
                                            remote, plus tz (the Mac's UTC offset, minutes); every MAC_S, on change
   knob → relay   C {"cmd": ...}            a command for /api/cmd; {"cmd": "detail", "id"} stays here and
                                            picks the agent whose detail the relay polls ("" stops it);
@@ -250,6 +250,7 @@ def main():
             try:
                 mac = bridge("GET", "/api/mac")
                 payload = {k: mac[k] for k in ("volume", "muted", "battery", "charging", "cpu") if k in mac}
+                payload["output"] = (mac.get("output") or "")[:40]
                 payload["tz"] = time.localtime().tm_gmtoff // 60  # the knob keeps UTC; its Clock shows the Mac's time
                 mac_line = encode("M", payload)
             except Exception as error:  # an older bridge without /api/mac: the knob's Clock shows the time only

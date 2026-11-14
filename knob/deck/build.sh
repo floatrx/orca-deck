@@ -21,4 +21,7 @@ if [ "${1:-}" = upload ]; then
   PORT="${2:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
   arduino-cli upload -p "$PORT" --fqbn "$FQBN" --input-dir "$BUILD" 2>&1 | tr '\r' '\n' | grep -E 'Hard resetting|rror' | tail -1
   [ "$LOADED" = yes ] && launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  # Opening the port while the S3 is still booting wedged its USB-Serial-JTAG three times (2026-11-14): silent until
+  # a power cycle, esptool included. Give it time before a test driver opens the port.
+  sleep 8
 fi

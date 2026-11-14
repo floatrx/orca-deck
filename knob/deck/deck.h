@@ -53,6 +53,7 @@ enum LinkKind { LINK_NONE, LINK_BLE, LINK_USB, LINK_WIFI };
 struct MacStatus {
   int volume = -1, battery = -1, cpu = -1;
   bool muted = false, charging = false;
+  String output;    // the Mac's sound output device
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -83,6 +84,7 @@ void push_simple(const char *cmd, const String &id = "", const String &pane = ""
 void set_status(bool online, const String &text);
 int tz_offset_min();  // the Mac's UTC offset, from the M line, kept in NVS for the Clock offline
 void tz_persist();    // LVGL task only: saves a new offset to NVS
+void tz_load();       // at boot, before the links start
 String status_problem();  // the status line, only when something is wrong (user: «тільки якщо є помилка»)
 bool apply_state(const String &body, const String &via);
 bool apply_detail(const String &body);
@@ -111,6 +113,7 @@ void haptic_tick();
 void haptic_click(int times = 1);
 void haptic_buzz(int times = 1);
 void haptic_sample();
+String haptic_report();
 
 // settings.cpp
 struct Settings {
@@ -120,6 +123,7 @@ struct Settings {
   uint8_t haptics = 3;        // 0 off · 1–3
   uint8_t sound = 2;          // 0 off · 1 quiet · 2 on
   uint8_t brightness = 100;   // 40–100 %
+  uint8_t saver = 15;         // screensaver after this many seconds idle; 0 off
 };
 extern Settings settings;
 void settings_load();
@@ -157,7 +161,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -193,6 +197,11 @@ String timer_report();
 void clock_create();
 void clock_tick();
 String clock_report();
+
+// app_mac.cpp
+void mac_create();
+void mac_tick();  // every frame: sends the batched volume, takes the Mac's numbers
+String mac_report();
 
 // banner.cpp — needs-you / done of an agent while orca-deck is not on screen
 void banner_create();

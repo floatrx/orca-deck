@@ -28,7 +28,6 @@ static lv_obj_t *page, *canvas, *caption, *zz;
 static lv_color_t *buf;
 static bool shown = false, enabled = true;
 static uint32_t last_input = 0;
-static uint16_t timeout_s = 12;
 static String mood = "idle";
 
 static const uint32_t ORANGE = 0xD97757, YELLOW = 0xFFD166;
@@ -154,8 +153,8 @@ void buddy_tick(uint32_t now)
   if (!page) return;
   if (!shown) {
     const App *app = hub_current();
-    bool eligible = enabled && timeout_s && (app == nullptr || app == &app_settings);
-    if (eligible && now - last_input >= timeout_s * 1000UL) show();
+    bool eligible = enabled && settings.saver && (app == nullptr || app == &app_settings);
+    if (eligible && now - last_input >= settings.saver * 1000UL) show();
     return;
   }
   static uint32_t last = 0, last_mood = 0;

@@ -136,19 +136,19 @@ static void sync_clock(const String &body)
   settimeofday(&set, nullptr);
 }
 
-static int tz_min = INT32_MIN;  // INT32_MIN: not loaded from NVS yet
+static volatile int tz_min = 0;
 static volatile bool tz_dirty = false;
 
-int tz_offset_min()
+// At boot, from the UI's setup: NVS reads touch flash too, and a lazy read from the BLE task (PSRAM stack) asserted.
+void tz_load()
 {
-  if (tz_min == INT32_MIN) {
-    Preferences prefs;
-    prefs.begin("deck", true);
-    tz_min = prefs.getInt("tz", 0);
-    prefs.end();
-  }
-  return tz_min;
+  Preferences prefs;
+  prefs.begin("deck", true);
+  tz_min = prefs.getInt("tz", 0);
+  prefs.end();
 }
+
+int tz_offset_min() { return tz_min; }
 
 static void apply_mac(const String &body)
 {
@@ -160,6 +160,7 @@ static void apply_mac(const String &body)
   mac.cpu = doc["cpu"] | -1;
   mac.muted = doc["muted"] | false;
   mac.charging = doc["charging"] | false;
+  mac.output = doc["output"] | "";
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;

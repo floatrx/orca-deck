@@ -19,8 +19,9 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define FORGET_HOLD_MS 2000
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
-enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS };
-static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER };
+static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
 static const std::vector<int> *rows = &SYSTEM_ROWS;
 
@@ -33,6 +34,7 @@ void settings_load()
   settings.haptics = prefs.getUChar("haptics", settings.haptics);
   settings.sound = prefs.getUChar("sound", settings.sound);
   settings.brightness = prefs.getUChar("bright", settings.brightness);
+  settings.saver = prefs.getUChar("saver", settings.saver);
   prefs.end();
 }
 
@@ -45,6 +47,7 @@ static void save()
   prefs.putUChar("haptics", settings.haptics);
   prefs.putUChar("sound", settings.sound);
   prefs.putUChar("bright", settings.brightness);
+  prefs.putUChar("saver", settings.saver);
   prefs.end();
 }
 
@@ -57,7 +60,7 @@ void settings_apply()
 static String row_name(int row)
 {
   static const char *NAMES[] = {"Connection", "Wi-Fi", "Hide inactive", "Hide completed", "Haptics", "Sound",
-                                "Brightness"};
+                                "Brightness", "Screensaver"};
   return NAMES[row];
 }
 
@@ -77,6 +80,7 @@ static String row_value(int row)
     case ROW_HAPTICS: return settings.haptics ? String(settings.haptics) + "/3" : "off";
     case ROW_SOUND: return settings.sound == 0 ? "off" : settings.sound == 1 ? "quiet" : "on";
     case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
+    case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
   }
   return "";
 }
@@ -116,6 +120,13 @@ void settings_page_tap()
     case ROW_HAPTICS: settings.haptics = (settings.haptics + 1) % 4; break;
     case ROW_SOUND: settings.sound = (settings.sound + 1) % 3; break;
     case ROW_BRIGHTNESS: settings.brightness = settings.brightness >= 100 ? 40 : settings.brightness + 20; break;
+    case ROW_SAVER: {
+      size_t i = 0, n = sizeof(SAVER_STEPS);
+      while (i < n && SAVER_STEPS[i] != settings.saver) i++;
+      settings.saver = SAVER_STEPS[(i + 1) % n];
+      buddy_input();  // the new wait starts from now
+      break;
+    }
   }
   save();
   settings_apply();

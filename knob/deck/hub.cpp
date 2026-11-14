@@ -4,7 +4,7 @@
 // Behind the list the Earth turns (globe.cpp).
 #include "deck.h"
 
-static const App *const APPS[] = {&app_deck, &app_timer, &app_clock, &app_settings};
+static const App *const APPS[] = {&app_deck, &app_timer, &app_mac, &app_clock, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -13,6 +13,11 @@ static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *sub
 static int focus = 0;
 static const App *current = nullptr;  // nullptr: the hub is on screen
 static bool pressed = false;
+// Boot (user, 2026-11-14): the Earth turns with a spinner in the middle until the Mac answers, then the list
+// fades in. 5 s at most: the knob works offline too.
+static lv_obj_t *spinner, *boot_label;
+static bool booting = true;
+static uint32_t boot_until = 0, linked_at = 0;
 static bool gestured = false;  // this touch was a swipe: its release must not count as a tap
 static uint32_t test_press_until = 0;
 
@@ -23,8 +28,10 @@ static const lv_opa_t OPA[SLOTS] = {LV_OPA_30, LV_OPA_60, LV_OPA_COVER, LV_OPA_6
 
 static void refresh()
 {
-  // shared_mux comes with link_init(), after the UI is built: the first refresh waits for hub_tick.
-  if (!page || !shared_mux || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
+  if (!page || booting || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
+  // shared_mux comes with link_init(), after the UI is built: until then the rows go without subtitles (LVGL's
+  // default "Text" showed on every label at boot when the whole refresh waited).
+  bool linked = shared_mux != nullptr;
   for (int slot = 0; slot < SLOTS; slot++) {
     int i = focus + slot - SLOTS / 2;
     if (i < 0 || i >= APP_COUNT) {
@@ -36,8 +43,9 @@ static void refresh()
     lv_obj_set_style_bg_color(badges[slot], lv_color_hex(app->color), 0);
     set_text(icons[slot], app->icon);
     set_text(names[slot], app->name);
-    set_text(subs[slot], slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
+    set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
+  if (!linked) return;
   String problem = status_problem();
   set_text(link_label, problem.length() ? "• " + problem : "");
   lv_obj_set_style_text_color(link_label, lv_color_hex(C_ATTENTION), 0);
@@ -82,8 +90,14 @@ const App *hub_current() { return current; }
 bool hub_pressing() { return pressed || millis() < test_press_until; }
 
 // Any input while the screensaver is up only wakes the knob, into the hub.
+static void end_boot();
+
 static bool wake()
 {
+  if (booting) {  // a touch during boot skips it
+    end_boot();
+    return true;
+  }
   buddy_input();
   if (!buddy_is_shown()) return false;
   buddy_hide();
@@ -155,10 +169,53 @@ static void on_pressed(lv_event_t *)
 }
 static void on_released(lv_event_t *) { pressed = false; }
 
+static void fade_row(void *row, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)row, v, 0); }
+
+static void end_boot()
+{
+  booting = false;
+  lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(boot_label, LV_OBJ_FLAG_HIDDEN);
+  refresh();
+  for (int slot = 0; slot < SLOTS; slot++) {
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, rows[slot]);
+    lv_anim_set_values(&a, LV_OPA_TRANSP, OPA[slot]);
+    lv_anim_set_time(&a, 300);
+    lv_anim_set_delay(&a, abs(slot - SLOTS / 2) * 60);  // the centre row first, then outward
+    lv_anim_set_exec_cb(&a, fade_row);
+    lv_anim_start(&a);
+  }
+  buddy_input();  // the screensaver's 12 s start now, not at power-on
+}
+
+static void boot_tick(uint32_t now)
+{
+  bool online = false;
+  if (shared_mux) {
+    xSemaphoreTake(shared_mux, portMAX_DELAY);
+    online = shared.online;
+    xSemaphoreGive(shared_mux);
+  }
+  if (online && !linked_at) {
+    linked_at = now;
+    set_text(boot_label, "connected");
+  }
+  if ((linked_at && now - linked_at >= 600) || now >= boot_until) end_boot();
+}
+
+bool hub_booting() { return booting; }
+
 void hub_tick()
 {
   static uint32_t last = 0;
   uint32_t now = millis();
+  if (booting) {
+    globe_tick(now);
+    boot_tick(now);
+    return;
+  }
   buddy_tick(now);
   if (!current && !buddy_is_shown()) globe_tick(now);
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
@@ -171,7 +228,8 @@ String hub_report()
   if (buddy_is_shown()) return buddy_report();
   if (current == &app_timer) return "Timer " + timer_report();
   if (current == &app_clock) return "Clock " + clock_report();
-  return current ? String(current->name) : "hub" + globe_report();
+  if (current == &app_mac) return "Mac " + mac_report();
+  return current ? String(current->name) : (booting ? "hub(boot)" : "hub") + globe_report();
 }
 
 void hub_test(const String &verb, const String &arg)
@@ -268,5 +326,20 @@ void hub_create()
     if (!mid) lv_obj_add_flag(sub, LV_OBJ_FLAG_HIDDEN);
   }
   link_label = make_label(page, &deck_14, C_MUTED, 160, 120);
+
+  spinner = lv_spinner_create(page, 1100, 70);
+  lv_obj_set_size(spinner, 96, 96);
+  lv_obj_center(spinner);
+  lv_obj_clear_flag(spinner, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_arc_width(spinner, 6, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(spinner, lv_color_hex(0x1C1D21), LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(spinner, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(spinner, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(spinner, lv_color_hex(C_ATTENTION), LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(spinner, true, LV_PART_INDICATOR);
+  boot_label = make_label(page, &deck_bold_16, C_INK, 76, 220);
+  set_text(boot_label, "connecting…");
+  for (int slot = 0; slot < SLOTS; slot++) lv_obj_set_style_opa(rows[slot], LV_OPA_TRANSP, 0);
+  boot_until = millis() + 5000;
   hub_home();
 }

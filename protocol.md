@@ -265,7 +265,7 @@ Relay lines, one JSON object each, `\n`-terminated:
 | `K` | relay → knob | `{now}` — keepalive each poll (1 s); the knob drops a link after 3 s without `S` / `K`. `now` (epoch ms, also in `S`) sets the knob's clock: NTP runs only on Wi-Fi |
 | `D` | relay → knob | `AgentDetail` trimmed to `id, bucket, next, question, message (≤1200)`; sent when it changes |
 | `A` | relay → knob | the `/api/cmd` answer (`Ack`) |
-| `M` | relay → knob | `{volume, muted, battery, charging, cpu, tz}` from `GET /api/mac` every 2 s, sent on a change; `tz` is the Mac's UTC offset in minutes (the knob keeps UTC and saves `tz` in NVS, so its Clock is right offline) |
+| `M` | relay → knob | `{volume, muted, output (≤40), battery, charging, cpu, tz}` from `GET /api/mac` every 2 s, sent on a change; `tz` is the Mac's UTC offset in minutes (the knob keeps UTC and saves `tz` in NVS, so its Clock is right offline) |
 | `C` | knob → relay | an `/api/cmd` body (`go`, `enter`, `send`, `say`, `answer`); `{cmd:"detail", id}` stays in the relay and picks the agent whose `AgentDetail` it polls (`""` stops); `{cmd:"hello"}` (KnobRelay.app on each BLE connect) makes it resend `S` and `D` at once |
 
 ## ntfy

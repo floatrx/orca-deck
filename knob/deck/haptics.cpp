@@ -11,11 +11,16 @@ static const uint8_t TICKS[] = {24, 25, 26};
 static const uint8_t CLICKS[] = {1, 2, 3};
 static const uint8_t BUZZES[] = {47, 48, 49};
 
+static uint32_t writes = 0, failures = 0;  // for `report`: a failed write is a silent missing buzz
+
 static void drv_write(uint8_t reg, uint8_t val)
 {
   uint8_t buf[2] = {reg, val};
-  i2c_master_write_to_device(I2C_NUM_0, DRV2605_ADDR, buf, 2, pdMS_TO_TICKS(20));
+  writes++;
+  if (i2c_master_write_to_device(I2C_NUM_0, DRV2605_ADDR, buf, 2, pdMS_TO_TICKS(20)) != ESP_OK) failures++;
 }
+
+String haptic_report() { return "haptic level=" + String(settings.haptics) + " writes=" + String(writes) + " failed=" + String(failures); }
 
 void haptic_init()
 {

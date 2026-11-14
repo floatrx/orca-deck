@@ -17,7 +17,7 @@ fallbacks.
 ## Hub and apps
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
-**swipe down in any app goes back to the hub**. Apps: orca-deck, Timer, Clock, Settings (`hub.cpp` holds the list; a new app is
+**swipe down in any app goes back to the hub**. Apps: orca-deck, Timer, Mac, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
@@ -32,6 +32,13 @@ stays hidden. A tap that ends a swipe is not a tap: LVGL sends a click on releas
 **Timer** works on the knob alone and keeps counting in the background: crown sets the minutes (1–90), tap
 starts / pauses, hold resets, tap twice switches Pomodoro (25 min focus → a 5 min break starts by itself). The end
 buzzes 3× and shows a banner wherever you are; a tap on it opens the Timer.
+
+**Mac** (remote): the crown sets the Mac's output volume (±2 % per detent; the knob moves at once, the steps go
+in one command every 120 ms), tap = play / pause, swipe left / right = next / previous track, hold = mute; the
+output device's name under the dial. No track title (macOS 15+ closed MediaRemote).
+
+**Boot**: the Earth turns with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades
+in from the centre. **Settings → Screensaver**: off / 5 / 10 / 15 (default) / 20 / 25 / 30 s / 1 min.
 
 **Clock**: the Mac's local time and date, a seconds sweep round the rim, and the Mac's battery and CPU while the
 link is alive (stale numbers say how old they are). The time works offline: the relay sends the Mac's UTC offset
@@ -99,7 +106,8 @@ uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "s
 ```
 
 Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `alert` (the banner for the agent on
-screen) · `tap banner` · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
+screen) · `tap banner` · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
+DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
 
@@ -125,8 +133,9 @@ external 3.5mm headphone or speaker to achieve playback"). The haptics carry the
 - `Wire` must not be used (the touch driver uses the legacy I2C driver; mixing aborts on core 3.x): the DRV2605
   is written directly.
 - ArduinoJson `serializeJson(doc, someString)` replaces the String — build prefixes after.
-- **Never write NVS (Preferences) from a link task**: their stacks are in PSRAM, a flash write turns the cache and
-  PSRAM off, and `cache_utils.c:127` asserts — the knob rebooted every 3 s. Flag it and save from the LVGL task.
+- **Never touch NVS (Preferences) from a link task — not even a read**: their stacks are in PSRAM, any flash access
+  turns the cache and PSRAM off, and `cache_utils.c:127` asserts — the knob rebooted every 3 s. Load at boot, flag
+  changes, save from the LVGL task.
 - macOS ignores a BLE security request from the knob: the app reads TX (READ_ENC) to start pairing.
 
 ## Third-party code

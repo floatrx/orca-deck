@@ -629,6 +629,7 @@ static void run_test(const String &line)
     else haptic_tick();
     Serial.printf("sound: ready=%d level=%d\n", sound_ready(), settings.sound);
   } else if (verb == "ble-drop") ble_drop();
+  else if (verb == "haptics") Serial.println(haptic_report());
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
     if (a) banner_show(worktrees[index_shown].id, a->id, ui_title(worktrees[index_shown]), "attention");
@@ -674,6 +675,7 @@ static void loop_tick(lv_timer_t *)
   settings_tick();
   timer_tick();
   clock_tick();
+  mac_tick();
   tz_persist();
   hub_tick();
   banner_tick();
@@ -699,6 +701,7 @@ static void loop_tick(lv_timer_t *)
 extern "C" void ui_init(void)
 {
   settings_load();  // applied in setup(), after the backlight PWM exists
+  tz_load();
 
   lv_obj_t *screen = lv_scr_act();
   lv_obj_set_style_bg_color(screen, lv_color_hex(C_BG), 0);
@@ -745,6 +748,7 @@ extern "C" void ui_init(void)
   agent_page_create();
   timer_create();
   clock_create();
+  mac_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it
   buddy_create();  // last: the screensaver covers everything
