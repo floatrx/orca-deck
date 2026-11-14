@@ -376,6 +376,15 @@ test("credentialServices: the config dir's hashed service first, then the defaul
   eq(#core.credentialServices(nil, function() return "" end), 1)
 end)
 
+test("focusShortcut: on / off map to the two Shortcuts; anything else is refused", function()
+  eq(core.focusShortcut({ on = true }), "Knob Focus On")
+  eq(core.focusShortcut({ on = false }), "Knob Focus Off")
+  local name, problem = core.focusShortcut({ on = "yes" })
+  eq(name, nil)
+  eq(problem, "focus needs on: true|false")
+  eq(core.commandRefusal("focus", "ws"), "focus needs the bearer token: use POST /api/cmd")
+end)
+
 test("cpuPercent: busy share between two samples; nil without a previous one", function()
   eq(core.cpuPercent(nil, { active = 10, idle = 90 }), nil)
   eq(core.cpuPercent({ active = 100, idle = 900 }, { active = 130, idle = 970 }), 30)

@@ -18,7 +18,7 @@ fallbacks.
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
 **swipe down in any app goes back to the hub**. Apps: **Claude** (the agents app — called "Claude" everywhere on the knob; its badge is Clawd on black, acting out the loudest agent state; its row reads
-"2 done · 5h 34% · wk 79%"), Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
+"2 done · 5h 34% · wk 79%"), Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
@@ -55,6 +55,11 @@ DC offset ~1500 (subtract it).
 scrub ⌘Z / ⇧⌘Z, Tabs ⌃Tab, Zoom ⌘= / ⌘−, Frame ← / →), the crown acts, a tap resets the count (Zoom: ⌘0). A ruler
 round the rim turns one tick per detent; the centre counts ("+5 redos", "-14 undos"). Steps go in one `jog`
 command every 80 ms. **It acts on whatever app is in front** — test it with Scroll only.
+
+**Focus**: a tap turns on the Mac's Focus (the Shortcut "Knob Focus On" — make it once in Shortcuts: *Set Focus →
+Do Not Disturb → On, until turned off*; and "Knob Focus Off" with *Off*), starts the Timer's Pomodoro and keeps a
+fresh done quiet (no buzz, no banner; needs-you still shows). A tap again — or the end of the Pomodoro's break —
+turns it all off. A missing Shortcut shows in red on the Focus page.
 
 **Wheel** (Decision Wheel): flick the crown (or tap) to spin; friction slows it, a haptic tick at every segment
 slows with it, and the stop lands on a click with the winner in the middle. Swipe picks the list: Lunch, Break,
@@ -164,6 +169,8 @@ external 3.5mm headphone or speaker to achieve playback"). The haptics carry the
 - `Wire` must not be used (the touch driver uses the legacy I2C driver; mixing aborts on core 3.x): the DRV2605
   is written directly.
 - ArduinoJson `serializeJson(doc, someString)` replaces the String — build prefixes after.
+- **`shared_mux` exists before any page is built** (`ui_init`'s first line): a page that paints in its create() reads
+  `shared`. When link_init made it, boot looped on `xQueueSemaphoreTake queue.c:1709` three times.
 - **Never touch NVS (Preferences) from a link task — not even a read**: their stacks are in PSRAM, any flash access
   turns the cache and PSRAM off, and `cache_utils.c:127` asserts — the knob rebooted every 3 s. Load at boot, flag
   changes, save from the LVGL task.

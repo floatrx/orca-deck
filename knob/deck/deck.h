@@ -57,6 +57,7 @@ struct MacStatus {
   String source, title;  // what plays: "YouTube" / "Music" / "Spotify" and the track; "" when nothing
   int claude_session = -1, claude_week = -1;     // Claude plan limits, % (-1: not known / no window)
   int session_reset_min = -1, week_reset_min = -1;
+  String focus_error;  // the bridge could not run the Focus Shortcut
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -171,7 +172,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -206,6 +207,17 @@ void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const
 void timer_create();
 void timer_tick();  // every frame, shown or not: it runs in the background
 String timer_report();
+void timer_focus(bool on);  // Focus Mode: Pomodoro on and started / stopped
+uint32_t timer_left_ms();
+uint32_t timer_total_ms();
+bool timer_running();
+bool timer_on_break();
+
+// app_focus.cpp
+void focus_create();
+void focus_tick();
+bool focus_is_on();  // done banners and buzzes stay quiet while on (needs-you still shows)
+String focus_report();
 
 // app_clock.cpp
 void clock_create();

@@ -373,6 +373,7 @@ def main():
                 playing = mac.get("playing") or {}
                 payload["source"] = playing.get("source", "")
                 payload["title"] = (playing.get("title") or "")[:100]
+                payload["fe"] = (mac.get("focusError") or "")[:80]  # the Focus Shortcut failed: say why
                 claude = mac.get("claude") or {}
                 for key, field in (("session", "cs"), ("week", "cw")):  # Claude plan limits, %
                     if claude.get(key) is not None:

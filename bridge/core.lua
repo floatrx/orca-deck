@@ -221,7 +221,7 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil
@@ -284,6 +284,15 @@ function core.credentialServices(configDir, sha256hex)
   end
   out[#out + 1] = "Claude Code-credentials"
   return out
+end
+
+--- The knob's Focus Mode: macOS has no public Focus API, so the bridge runs two Shortcuts the user made once.
+core.FOCUS_SHORTCUTS = { on = "Knob Focus On", off = "Knob Focus Off" }
+
+--- The Shortcut name for a focus command, or nil and why not.
+function core.focusShortcut(message)
+  if type(message.on) ~= "boolean" then return nil, "focus needs on: true|false" end
+  return core.FOCUS_SHORTCUTS[message.on and "on" or "off"], nil
 end
 
 --- CPU busy percent between two hs.host.cpuUsageTicks() samples (their `overall` tables); nil without a previous.

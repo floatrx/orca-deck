@@ -578,6 +578,7 @@ local function macStatus()
   out.cpu = core.cpuPercent(deckBridge.cpuTicks, current)
   deckBridge.cpuTicks = current
   out.playing = deckBridge.nowPlaying
+  out.focusError = deckBridge.focusError
   out.claude = deckBridge.claudeUsage
   out.claudeError = deckBridge.claudeUsageError
   local seconds = hs.timer.secondsSinceEpoch()
@@ -616,6 +617,19 @@ local function jogCommand(message)
   end
   local chord = JOG_KEYS[message.mode][value > 0 and 1 or 2]
   for _ = 1, math.abs(value) do hs.eventtap.keyStroke(chord.mods, chord.key, 0) end
+  return nil
+end
+
+--- cmd "focus": runs the user's Shortcut in the background; a missing one comes back in the ack's note on the next
+--- poll (`focusError`), since `shortcuts run` reports it only when it ends.
+local function focusCommand(message)
+  local name, problem = core.focusShortcut(message)
+  if problem then return problem end
+  hs.task.new("/usr/bin/shortcuts", function(code, _, err)
+    deckBridge.focusError = code ~= 0 and ("Shortcut \"" .. name .. "\": " .. ((err or ""):match("[^\n]+") or ("exit " .. code))) or nil
+    if code == 0 then deckBridge.focusOn = message.on end
+    trail("focus " .. tostring(message.on) .. " → " .. (deckBridge.focusError or "ok"))
+  end, { "run", name }):start()
   return nil
 end
 
@@ -678,6 +692,8 @@ local function run(message, via)
     return ack(cmd, macCommand(message))
   elseif cmd == "jog" then
     return ack(cmd, jogCommand(message))
+  elseif cmd == "focus" then
+    return ack(cmd, focusCommand(message))
   end
   return ack(tostring(cmd), "unknown command")
 end

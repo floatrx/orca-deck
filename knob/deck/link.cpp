@@ -167,6 +167,7 @@ static void apply_mac(const String &body)
   mac.claude_week = doc["cw"] | -1;
   mac.session_reset_min = doc["csr"] | -1;
   mac.week_reset_min = doc["cwr"] | -1;
+  mac.focus_error = doc["fe"] | "";
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;
@@ -373,7 +374,7 @@ static void dispatch_task(void *)
 
 void link_init()
 {
-  shared_mux = xSemaphoreCreateMutex();
+  if (!shared_mux) shared_mux = xSemaphoreCreateMutex();  // ui_init made it first
   serial_link_start();
   ble_link_start();
   wifi_link_start();

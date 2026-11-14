@@ -325,7 +325,7 @@ static void on_state(std::vector<Worktree> &list)
         if (a.bucket == "attention") {
           pulses = 2;
           alert_w = &w, alert_a = &a;
-        } else if (a.bucket == "done" && it->second == "working") {
+        } else if (a.bucket == "done" && it->second == "working" && !focus_is_on()) {  // Focus: a done stays quiet
           pulses = max(pulses, 1);
           if (!alert_a || alert_a->bucket != "attention") alert_w = &w, alert_a = &a;
           fresh_done_worktree = w.id;
@@ -726,6 +726,7 @@ static void loop_tick(lv_timer_t *)
   mac_tick();
   jog_tick();
   wheel_tick();
+  focus_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -751,6 +752,9 @@ static void loop_tick(lv_timer_t *)
 
 extern "C" void ui_init(void)
 {
+  // First of all: pages paint while they are built and read `shared` under this mutex. Made in link_init (after the
+  // UI) it crashed the boot three times (the hub, Focus: assert in xQueueSemaphoreTake).
+  if (!shared_mux) shared_mux = xSemaphoreCreateMutex();
   settings_load();  // applied in setup(), after the backlight PWM exists
   tz_load();
 
@@ -802,6 +806,7 @@ extern "C" void ui_init(void)
   mac_create();
   jog_create();
   wheel_create();
+  focus_create();
   dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it

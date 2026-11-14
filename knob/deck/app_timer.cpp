@@ -169,6 +169,24 @@ static void hide()
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
 }
 
+void timer_focus(bool on)
+{
+  single_tap_at = 0;
+  if (on) {
+    pomodoro = true;
+    on_break = false;
+    start(FOCUS_MIN * 60000UL);
+  } else {
+    reset();
+  }
+  paint();
+}
+
+uint32_t timer_left_ms() { return remaining(); }
+uint32_t timer_total_ms() { return total_ms; }
+bool timer_running() { return phase == RUNNING; }
+bool timer_on_break() { return on_break; }
+
 String timer_report()
 {
   return String(phase == RUNNING ? "running" : phase == PAUSED ? "paused" : "stopped") + " " + clock_text(remaining()) +
