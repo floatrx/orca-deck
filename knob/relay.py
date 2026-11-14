@@ -378,6 +378,9 @@ def main():
                 for key, field in (("session", "cs"), ("week", "cw")):  # Claude plan limits, %
                     if claude.get(key) is not None:
                         payload[field] = claude[key]
+                payload["csv"] = claude.get("weekSeverity") or ""  # normal / warning / critical
+                payload["cmod"] = "|".join(f"{m['name']} {m['percent']}" for m in claude.get("models") or [])
+                payload["cbd"] = "|".join(f"{r['name']} {r['percent']}" for r in claude.get("breakdown") or [])
                 for key, field, unit in (("sessionResets", "csr", 60), ("weekResets", "cwr", 60)):  # minutes left
                     left = until_minutes(claude.get(key))
                     if left is not None:

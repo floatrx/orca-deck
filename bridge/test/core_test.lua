@@ -369,6 +369,19 @@ test("claudeUsageOf: rounded percents and reset times; nil without either window
   eq(core.claudeUsageOf(nil), nil)
 end)
 
+test("claudeUsageOf: severity, per-model limits and the week's breakdown (non-zero rows)", function()
+  local u = core.claudeUsageOf({ seven_day = { utilization = 80 },
+    limits = { { kind = "weekly_all", severity = "warning", percent = 80 },
+      { kind = "weekly_scoped", percent = 0, scope = { model = { display_name = "Fable" } } } },
+    seven_day_breakdown = { rows = { { key = "claude_code", display_name = "Claude Code", percent = 41 },
+      { key = "chat", display_name = "Chats", percent = 0 }, { key = "cowork", display_name = "Cowork", percent = 59 } } } })
+  eq(u.weekSeverity, "warning")
+  eq(u.models[1].name, "Fable")
+  eq(u.models[1].percent, 0)
+  eq(#u.breakdown, 2)
+  eq(u.breakdown[2].name, "Cowork")
+end)
+
 test("credentialServices: the config dir's hashed service first, then the default", function()
   local s = core.credentialServices("/x/home", function() return "abcdef0123456789" end)
   eq(s[1], "Claude Code-credentials-abcdef01")

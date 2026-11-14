@@ -168,6 +168,9 @@ static void apply_mac(const String &body)
   mac.session_reset_min = doc["csr"] | -1;
   mac.week_reset_min = doc["cwr"] | -1;
   mac.focus_error = doc["fe"] | "";
+  mac.week_severity = doc["csv"] | "";
+  mac.models = doc["cmod"] | "";
+  mac.breakdown = doc["cbd"] | "";
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;

@@ -18,7 +18,7 @@ fallbacks.
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
 **swipe down in any app goes back to the hub**. Apps: **Claude** (the agents app — called "Claude" everywhere on the knob; its badge is Clawd on black, acting out the loudest agent state; its row reads
-"2 done · 5h 34% · wk 79%"), Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
+"2 done · 5h 34% · wk 79%"), Usage, Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
@@ -55,6 +55,11 @@ DC offset ~1500 (subtract it).
 scrub ⌘Z / ⇧⌘Z, Tabs ⌃Tab, Zoom ⌘= / ⌘−, Frame ← / →), the crown acts, a tap resets the count (Zoom: ⌘0). A ruler
 round the rim turns one tick per detent; the centre counts ("+5 redos", "-14 undos"). Steps go in one `jog`
 command every 80 ms. **It acts on whatever app is in front** — test it with Scroll only.
+
+**Usage**: Claude's plan limits at a glance — the week's dial in its severity's colour (blue / orange warning / red
+critical), the % and the time to the reset in the middle, an inner dial for the 5 h window (or a per-model limit
+such as Fable when no window is open), and a stacked bar of what the week went on (Code / Cowork / Chats), the
+legend in the parts' colours. All from the bridge's `oauth/usage` (Orca's status-bar source).
 
 **Focus**: a tap turns on the Mac's Focus (the Shortcut "Knob Focus On" — make it once in Shortcuts: *Set Focus →
 Do Not Disturb → On, until turned off*; and "Knob Focus Off" with *Off*), starts the Timer's Pomodoro and keeps a

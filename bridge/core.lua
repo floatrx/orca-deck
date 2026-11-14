@@ -271,6 +271,25 @@ function core.claudeUsageOf(doc)
   if out.session == nil and out.week == nil then return nil end
   out.sessionResets = type(doc.five_hour) == "table" and doc.five_hour.resets_at or nil
   out.weekResets = type(doc.seven_day) == "table" and doc.seven_day.resets_at or nil
+  -- The week's severity (normal / warning / critical) and the per-model weekly limits ("Fable 0 %").
+  out.models = {}
+  for _, limit in ipairs(type(doc.limits) == "table" and doc.limits or {}) do
+    if type(limit) == "table" then
+      if limit.kind == "weekly_all" then out.weekSeverity = limit.severity end
+      local model = type(limit.scope) == "table" and type(limit.scope.model) == "table" and limit.scope.model.display_name
+      if limit.kind == "weekly_scoped" and type(model) == "string" and tonumber(limit.percent) then
+        out.models[#out.models + 1] = { name = model, percent = math.floor(tonumber(limit.percent) + 0.5) }
+      end
+    end
+  end
+  -- What the week went on: Claude Code / Cowork / Chats … (percent of the week's use), the non-zero ones.
+  out.breakdown = {}
+  local rows = type(doc.seven_day_breakdown) == "table" and doc.seven_day_breakdown.rows or {}
+  for _, row in ipairs(type(rows) == "table" and rows or {}) do
+    if type(row) == "table" and tonumber(row.percent) and tonumber(row.percent) > 0 then
+      out.breakdown[#out.breakdown + 1] = { name = row.display_name or row.key, percent = math.floor(tonumber(row.percent) + 0.5) }
+    end
+  end
   return out
 end
 

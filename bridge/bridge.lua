@@ -547,6 +547,7 @@ local function refreshClaudeUsage()
           deckBridge.claudeUsageBusy = false
           if status == 200 then
             local ok, doc = pcall(hs.json.decode, body or "")
+            deckBridge.claudeUsageRaw = ok and doc or nil  -- percents and reset times only: no token in this answer
             deckBridge.claudeUsage = ok and core.claudeUsageOf(doc) or nil
             deckBridge.claudeUsageError = nil
             if not deckBridge.claudeUsage then deckBridge.claudeUsageError = "usage: unexpected answer" end

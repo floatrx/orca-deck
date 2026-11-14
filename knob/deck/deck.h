@@ -58,6 +58,8 @@ struct MacStatus {
   int claude_session = -1, claude_week = -1;     // Claude plan limits, % (-1: not known / no window)
   int session_reset_min = -1, week_reset_min = -1;
   String focus_error;  // the bridge could not run the Focus Shortcut
+  String week_severity;     // normal / warning / critical
+  String models, breakdown;  // "Fable 0" · "Claude Code 41|Cowork 59" (name, space, percent; | between)
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -172,7 +174,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -218,6 +220,11 @@ void focus_create();
 void focus_tick();
 bool focus_is_on();  // done banners and buzzes stay quiet while on (needs-you still shows)
 String focus_report();
+
+// app_usage.cpp
+void usage_create();
+void usage_tick();
+String usage_report();
 
 // app_clock.cpp
 void clock_create();
