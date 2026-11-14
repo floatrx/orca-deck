@@ -16,84 +16,71 @@ fallbacks.
 
 ## Hub and apps
 
-The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
-**swipe down in any app goes back to the hub**. Apps: **Claude** (the agents app — called "Claude" everywhere on the knob; its badge is Clawd on black, acting out the loudest agent state; its row reads
-"2 done · 5h 34% · wk 79%"), Usage, Day, Focus, Timer, Mac, Jog, Wheel, Clock, Settings (`hub.cpp` holds the list; a new app is
-an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
+The knob boots into the **hub**, a watchOS-style list over a dotted Earth turning edge to edge: the crown moves the
+list, a tap opens the app, **swipe down in any app goes home** (its own vibration: a ramp down that lands on a
+click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/plans/knob-hub.md` (local).
 
-Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
-`knob/tools/earth_mask.py`). After 12 s without input in the hub
-or Settings, **Clawd** (the Claude Code banner's pixel creature, `buddy.cpp`) takes the screen as the screensaver and
-acts the loudest state out (idle, working, needs you, done, asleep without a link), with Claude's plan limits round
-the rim (outer arc: the week, orange past 80 %; inner: the 5 h window) and "wk 79% · 1d 1h" under him; a tap, the
-crown or a swipe goes back to the hub. The limits come from the bridge (`/api/mac` → `claude`), the same
-`api.anthropic.com/api/oauth/usage` Orca's status bar uses. Never over orca-deck: that page is the one glanced at.
-
-The link status line shows only when something is wrong (offline, a failed or dropped command); "bridge online"
-stays hidden. A tap that ends a swipe is not a tap: LVGL sends a click on release even after a gesture.
-
-**Timer** works on the knob alone and keeps counting in the background: crown sets the minutes (1–90), tap
-starts / pauses, hold resets, tap twice switches Pomodoro (25 min focus → a 5 min break starts by itself). The end
-buzzes 3× and shows a banner wherever you are; a tap on it opens the Timer.
-
-**Mac** (remote): the crown sets the Mac's output volume (±2 % per detent; the knob moves at once, the steps go
-in one command every 120 ms), tap = play / pause, swipe left / right = next / previous track, hold = mute; the
-output device's name under the dial, and what plays (`YouTube` + the video's title, scrolling): macOS 15+ closed
-MediaRemote, so the bridge asks Music, Spotify and the YouTube tabs of Chrome / Safari itself (macOS asks once to
-let Hammerspoon control the browser). The hub row shows it too. The Clock's badge is a live analog face.
-
-**Dictation** (orca-deck): a hold on an agent starts it (a click); let go and speak — the ring breathes with your
-voice; **tap when done** (a swipe while listening cancels — the only way not to send). The relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in `~/.config/orca-deck/openai.key`, mode 600, never in
-the repo) and the text **goes to the agent at once** (`say`, no confirming tap — the user's call), shown as SENT for 1.2 s. 60 s at most. The audio
-streams while you speak (IMA ADPCM, 8 KB/s over BLE), so the text is back ~1 s after the tap. The transcript never goes to the relay's log.
-
-**Microphone** (spike): PDM, clock GPIO45 / data GPIO46, on I2S0 (sound plays on I2S1). `T mic <s>` records into
-PSRAM, prints dBFS per 100 ms and streams the samples as `MIC <base64>` lines; a quiet room reads −42…−54 dBFS,
-DC offset ~1500 (subtract it).
-
-**Jog**: the crown as a precise wheel for the Mac's front app — swipe left / right picks the mode (Scroll, Undo
-scrub ⌘Z / ⇧⌘Z, Tabs ⌃Tab, Zoom ⌘= / ⌘−, Frame ← / →), the crown acts, a tap resets the count (Zoom: ⌘0). A ruler
-round the rim turns one tick per detent; the centre counts ("+5 redos", "-14 undos"). Steps go in one `jog`
-command every 80 ms. **It acts on whatever app is in front** — test it with Scroll only.
-
-**Usage**: Claude's plan limits at a glance — the week's dial in its severity's colour (blue / orange warning / red
-critical), the % and the time to the reset in the middle, an inner dial for the 5 h window (or a per-model limit
-such as Fable when no window is open), and a stacked bar of what the week went on (Code / Cowork / Chats), the
-legend in the parts' colours. All from the bridge's `oauth/usage` (Orca's status-bar source).
-
-**Day** (Agent Day Timeline): today on a 24 h dial — midnight at the top, one ring per worktree (busiest outside),
-blue while its agent worked, orange while it waited on you, a white hand for now; the centre says how long agents
-waited on you and how long they worked. The crown moves a cursor 15 min a detent and the centre tells who did what
-then. The bridge keeps the spans in `~/.config/orca-deck/day/<date>.json` (only from when it started recording;
-`done` is not kept — it lingers until the next prompt).
-
-**Focus**: a tap turns on the Mac's Focus (the Shortcut "Knob Focus On" — make it once in Shortcuts: *Set Focus →
-Do Not Disturb → On, until turned off*; and "Knob Focus Off" with *Off*), starts the Timer's Pomodoro and keeps a
-fresh done quiet (no buzz, no banner; needs-you still shows). A tap again — or the end of the Pomodoro's break —
-turns it all off. A missing Shortcut shows in red on the Focus page.
-
-**Wheel** (Decision Wheel): flick the crown (or tap) to spin; friction slows it, a haptic tick at every segment
-slows with it, and the stop lands on a click with the winner in the middle. Swipe picks the list: Lunch, Break,
-Yes / No, Dice. Knob only.
-
-**Boot**: the Earth turns with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades
-in from the centre. **Settings → Screensaver**: off / 5 / 10 / 15 (default) / 20 / 25 / 30 s / 1 min.
-
-**Clock**: the Mac's local time and date, a seconds sweep round the rim, and the Mac's battery and CPU while the
-link is alive (stale numbers say how old they are). The time works offline: the relay sends the Mac's UTC offset
-and the knob keeps it in NVS.
-
-When an agent turns needs-you or done while orca-deck is not on screen, a **banner** slides in at the top for 3 s
-(project + state, in the state's colour) next to the usual buzz; a tap on it opens orca-deck on that agent (and
-Orca follows), a tap below it goes to the app under it.
-
-## orca-deck pages and gestures (as Apex: its settings · main · agent)
-
-| | Main | Agent page | orca-deck settings |
+| App | What it is for | Crown · tap · hold · swipe | Data |
 |---|---|---|---|
-| crown | workspace (Orca follows after 1 s) | row | row |
+| **Claude** | the agents: who works, who needs you, their Next prompts | workspace · show it in Orca · dictate · ← agent page / → its settings / ↑ next agent | bridge state |
+| **Usage** | Claude's plan limits | — | bridge `oauth/usage` |
+| **Day** | today on a 24 h dial: who worked, who waited on you | a cursor, 15 min a detent | bridge day log |
+| **Focus** | one tap into deep work: Mac Focus + Pomodoro + quiet banners | — · on / off | Shortcuts |
+| **Timer** | timer / Pomodoro, counts in the background | minutes · start/pause · reset · double tap: Pomodoro | knob only |
+| **Mac** | volume and media keys, what plays | volume · play/pause · mute · ←/→ track | bridge `/api/mac` |
+| **Jog** | the crown as a precise wheel for the Mac's front app | act · reset · — · ←/→ mode | bridge `jog` |
+| **Wheel** | pick lunch / a break / yes-no by spinning | spin · spin · — · ←/→ list | knob only |
+| **Clock** | the Mac's time, battery, CPU | — | bridge `/api/mac` |
+| **Settings** | Connection, Wi-Fi, Screensaver, Haptics, Sound, Brightness | row · change · Connection: forget (2 s) | NVS |
+
+**Everywhere:**
+- **Boot**: the Earth with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades in.
+- **Banner**: an agent turns needs-you or done while Claude is not on screen → a pill at the top for 3 s and a buzz;
+  a tap on it opens Claude on that agent. Apps use it too (the Timer's end, Focus off).
+- **Screensaver**: after Settings → Screensaver (off / 5 … 30 s / 1 min, default 15 s) without input in the hub or
+  Settings, **Clawd** (the Claude Code banner's pixel creature) acts out the loudest agent state — idle, working,
+  needs you, done, asleep without a link — with the plan limits round the rim (outer: the week, orange past 80 %;
+  inner: 5 h) and "wk 80% · 1d 0h" under him. Any touch goes back to the hub. Never over Claude, Clock or the apps
+  that are glanced at.
+- **Every gesture vibrates**: the hub ticks for a gesture its app left silent. A silent knob is first Settings →
+  Haptics = off (one tap from 3).
+- The status line shows only problems (offline, a failed or dropped command). Fonts carry `→` but no `←` / `↓`:
+  write directions in words.
+
+**The apps in short:**
+- **Claude** — "Claude" everywhere on the knob (orca-deck is the repo's name). Its hub badge is Clawd on black
+  acting out the loudest state; its row reads "2 done · wk 80%". Pages below.
+- **Dictation** (Claude, hold on an agent): speak freely; a round **equalizer** (64 bars, mirrored, magenta → blue
+  → cyan) follows the voice; **tap when done** — the relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in
+  `~/.config/orca-deck/openai.key`, mode 600, never in the repo) and the text **goes to the agent at once**, shown as
+  SENT for 1.2 s. A swipe while listening cancels — the only way not to send. Audio streams as IMA ADPCM (8 KB/s)
+  while you speak, so the text is back ~1 s after the tap. The transcript never goes to a log.
+- **Usage** — the week's dial in its severity's colour (blue / orange warning / red critical), % and time to the
+  reset, an inner dial for the 5 h window (or a model limit such as Fable), and a stacked bar of what the week went
+  on (Code / Cowork / Chats). From the bridge's `oauth/usage` call, the source of Orca's status bar.
+- **Day** — midnight at the top, one ring per worktree (busiest outside), blue worked / orange waited, a white hand
+  for now; the centre sums waited / worked. The bridge keeps the spans in `~/.config/orca-deck/day/<date>.json`
+  (from when it started recording; `done` is not kept — it lingers until the next prompt).
+- **Focus** — needs two Shortcuts, made once: "Knob Focus On" (*Set Focus → Do Not Disturb → On, until turned
+  off*) and "Knob Focus Off" (*Off*). While on, a fresh done neither buzzes nor banners (needs-you still does);
+  the end of the Pomodoro's break turns it off. A missing Shortcut shows in red.
+- **Timer** — the end buzzes 3× and banners wherever you are.
+- **Mac** — what plays comes from Music, Spotify or a YouTube tab in Chrome / Safari (macOS 15+ closed
+  MediaRemote; macOS asks once to let Hammerspoon control the browser).
+- **Jog** — Scroll, Undo scrub (⌘Z / ⇧⌘Z), Tabs (⌃Tab), Zoom (⌘= / ⌘−, tap ⌘0), Frame (← / →); a ruler turns one
+  tick a detent, the centre counts ("-14 undos"). **It acts on whatever app is in front** — test with Scroll only.
+- **Wheel** — friction slows the spin, a haptic tick per segment slows with it, the stop lands on a click with the
+  winner. Lists: Lunch, Break, Yes / No, Dice.
+- **Clock** — the time works offline (the relay sends the Mac's UTC offset, kept in NVS); its hub badge is a live
+  analog face.
+
+## Claude pages and gestures (as Apex: its settings · main · agent)
+
+| | Main | Agent page | Claude settings |
+|---|---|---|---|
+| crown | workspace (Orca follows after 1 s) | row; the message when there is nothing to pick | row |
 | tap | Orca shows this agent (`go` + `enter`) | tick a variant / Send / answer | change the value |
-| hold | **dictate** to the agent (below) | — | — |
+| hold | **dictate** to the agent | — | — |
 | swipe up | next agent of the workspace | — | — |
 | double tap | `send` (Enter in Orca) | — | — |
 | swipe right | its settings | back | — |
@@ -104,18 +91,17 @@ Orca follows), a tap below it goes to the app under it.
   small, the agent's last message. A comet runs round the rim while the agent works; the halo pulses while it
   needs you. Buzz + sound: 2 for needs-you, 1 for done.
 - **Agent page:** the full last message, the Next variants with ticks (the first one ticked, marked •), one Send
-  (`say`, several ticked go as a numbered list); a pending question shows its options and a tap answers it. No
-  variants while the agent works. After Send / an answer: back to the main page, turned to the next waiting
-  agent.
-- **orca-deck settings** (NVS): Hide inactive, Hide completed (off / 1 h / 1 day).
-- **Settings app** (NVS): Connection (**hold 2 s**: forget the paired relay), Wi-Fi off / fallback, Haptics 0–3,
-  Sound off / quiet / on, Brightness 40–100 %. The fonts carry `→` but no `←` / `↓`: write directions in words.
+  (`say`, several ticked go as a numbered list); a pending question shows its options and a tap answers it. While
+  the agent works: no variants, a grey "Working…" with a spinner. After Send / an answer: back to the main page,
+  turned to the next waiting agent.
+- **Claude settings** (NVS): Hide inactive, Hide completed (off / 1 h / 1 day).
 
 ## Links
 
 Priority **BLE → USB → Wi-Fi**. Wi-Fi turns on only after 10 s without BLE and USB, and off when one returns
-(one radio for both). The status line names the live link. Lines on BLE / USB (`relay.py` docstring):
-`S` state · `K` keepalive · `D` agent detail · `A` ack (down), `C` command (up).
+(one radio for both). Lines on BLE / USB (`relay.py` docstring, `protocol.md` § Knob transports):
+down `S` state · `K` keepalive · `D` agent detail · `A` ack · `M` the Mac and Claude's limits · `X` a transcript ·
+`Y` the day; up `C` command · `V` dictation audio.
 
 BLE: Nordic UART service, encrypted and bonded (Just Works). The knob refuses a new central once it has a bond,
 unless Settings → Connection → forget opened pairing (2 min). The app talks only to the knob it pinned in
@@ -145,13 +131,22 @@ data rides BLE — the same as the cable being out for the bridge link:
 uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "swipe left" "wait 3" "report"
 ```
 
-Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `alert` (the banner for the agent on
-screen) · `tap banner` · `dictate` (the dictation screen's state, level and text) · `subtitle` (the Claude row and the limits) · `hold` then `tap` (start, then done) · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
-DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
-`ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
-`wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
+Verbs:
 
-**`turn` on orca-deck's main page moves Orca** (a `go` after 1 s): wait for the state (`wait 8` after boot) before
+| Verb | Does |
+|---|---|
+| `turn N` · `tap` · `hold [ms]` · `swipe left\|right\|up\|down` | the hands (`hold 2500` = a 2.5 s hold) |
+| `open <app>` · `home` | open an app by its hub name / go home |
+| `report` | page (and the open app's own state), selection, agent, link, status |
+| `select <worktree id>\|<agent id>` | the Claude page's choice, without `go` |
+| `alert` · `tap banner` | the banner for the agent on screen / a tap on it |
+| `dictate` · `subtitle` | the dictation screen's state / the Claude row and the limits |
+| `saver off\|on\|now` | keep the screensaver out of a test (until the next reboot) / show it |
+| `haptics [level]` | the level and the DRV2605 writes / set the level (saved) |
+| `mic <s>` | record and stream the samples as `MIC` lines (`.work` scratch `miccap.py` makes a WAV) |
+| `sound tick\|buzz\|test` · `ble-drop` · `wait <s>` | sounds / drop the BLE link / wait | Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
+
+**`turn` on Claude's main page moves Orca** (a `go` after 1 s): wait for the state (`wait 8` after boot) before
 `swipe left`, or the crown meant for the agent page switches the user's active worktree.
 
 **A dictation test cancels with `swipe left` while listening — never `tap`**: since the auto-send, the tap that
