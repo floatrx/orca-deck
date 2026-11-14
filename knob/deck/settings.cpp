@@ -51,6 +51,13 @@ static void save()
   prefs.end();
 }
 
+void settings_set_haptics(int level)
+{
+  settings.haptics = (uint8_t)max(0, min(3, level));
+  save();
+  haptic_sample();
+}
+
 void settings_apply()
 {
   setUpdutySubdivide(255 * settings.brightness / 100);

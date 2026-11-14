@@ -172,18 +172,31 @@ static void swipe(lv_dir_t dir)
 }
 
 // LVGL sends a click on release even after a swipe: a quick swipe down went home, then the click reopened the app.
+// Every gesture answers with a buzz (user, 2026-11-14: «тапи, свайпи … не мають віддачі»). An app that gave none
+// — a gesture with nothing to do, or one whose action comes later — gets a light tick here.
+static void answered(void (*gesture)())
+{
+  uint32_t before = haptic_plays();
+  gesture();
+  if (haptic_plays() == before) haptic_tick();
+}
+
+static lv_dir_t swipe_dir;
+static void swipe_now() { swipe(swipe_dir); }
+
 static void on_click(lv_event_t *)
 {
-  if (!gestured) tap();
+  if (!gestured) answered(tap);
 }
 static void on_long_press(lv_event_t *)
 {
-  if (!gestured) hold();
+  if (!gestured) answered(hold);
 }
 static void on_gesture(lv_event_t *)
 {
   gestured = true;
-  swipe(lv_indev_get_gesture_dir(lv_indev_get_act()));
+  swipe_dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+  answered(swipe_now);
 }
 static void on_pressed(lv_event_t *)
 {

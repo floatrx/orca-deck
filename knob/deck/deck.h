@@ -119,6 +119,7 @@ void haptic_click(int times = 1);
 void haptic_buzz(int times = 1);
 void haptic_sample();
 String haptic_report();
+uint32_t haptic_plays();  // every haptic asked for so far: the hub's "every gesture answers" check
 
 // settings.cpp
 struct Settings {
@@ -133,6 +134,7 @@ struct Settings {
 extern Settings settings;
 void settings_load();
 void settings_apply();
+void settings_set_haptics(int level);  // 0–3, saved
 void settings_page_create();
 void settings_page_show(bool show, bool deck_rows = false);  // deck_rows: orca-deck's own page, else the system app
 bool settings_page_open();

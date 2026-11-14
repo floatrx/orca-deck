@@ -646,7 +646,10 @@ static void run_test(const String &line)
     else haptic_tick();
     Serial.printf("sound: ready=%d level=%d\n", sound_ready(), settings.sound);
   } else if (verb == "ble-drop") ble_drop();
-  else if (verb == "haptics") Serial.println(haptic_report());
+  else if (verb == "haptics") {  // "haptics" reports; "haptics 3" sets the level (saved)
+    if (arg.length()) settings_set_haptics(arg.toInt());
+    Serial.println(haptic_report());
+  }
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "dictate") Serial.println(dictate_report());
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
@@ -687,8 +690,7 @@ static void loop_tick(lv_timer_t *)
   if (single_tap_at && now >= single_tap_at) {
     single_tap_at = 0;
     if (commit_at) commit();
-    haptic_click();
-    push_simple("enter");
+    push_simple("enter");  // the hub ticked when the finger tapped: a second buzz 260 ms later felt like a stutter
   }
   agent_page_tick();
   settings_tick();

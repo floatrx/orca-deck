@@ -11,7 +11,7 @@ static const uint8_t TICKS[] = {24, 25, 26};
 static const uint8_t CLICKS[] = {1, 2, 3};
 static const uint8_t BUZZES[] = {47, 48, 49};
 
-static uint32_t writes = 0, failures = 0;  // for `report`: a failed write is a silent missing buzz
+static uint32_t writes = 0, failures = 0, plays = 0;  // for `report`: a failed write is a silent missing buzz
 
 static void drv_write(uint8_t reg, uint8_t val)
 {
@@ -19,6 +19,8 @@ static void drv_write(uint8_t reg, uint8_t val)
   writes++;
   if (i2c_master_write_to_device(I2C_NUM_0, DRV2605_ADDR, buf, 2, pdMS_TO_TICKS(20)) != ESP_OK) failures++;
 }
+
+uint32_t haptic_plays() { return plays; }
 
 String haptic_report() { return "haptic level=" + String(settings.haptics) + " writes=" + String(writes) + " failed=" + String(failures); }
 
@@ -33,6 +35,7 @@ void haptic_init()
 // Plays `effect` `times` times, 250 ms apart (a waveform-sequencer wait between them).
 static void play(const uint8_t *table, int times)
 {
+  plays++;  // counted even when Haptics is off: the hub asks "did this gesture answer?", not "did it buzz?"
   if (!settings.haptics) return;
   uint8_t effect = table[3 - settings.haptics];
   uint8_t reg = 0x04;
