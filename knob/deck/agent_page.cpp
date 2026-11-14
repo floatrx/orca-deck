@@ -93,6 +93,7 @@ static void add_status(const char *text)
   lv_obj_set_style_bg_opa(status_line, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(status_line, 0, 0);
   lv_obj_set_style_pad_all(status_line, 0, 0);
+  lv_obj_set_style_pad_ver(status_line, 14, 0);  // air above and below it (user, 2026-11-14)
   lv_obj_set_style_pad_column(status_line, 8, 0);
   lv_obj_set_flex_flow(status_line, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(status_line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -169,7 +170,8 @@ String agent_page_debug()
 {
   String out = "agent=" + agent_id.substring(0, 48) + " loaded=" + String(loaded) + " rows=" + String(rows.size()) +
                " focus=" + String(focus) + " ticked=" + String(ticked.size()) + " next=" + String(page_detail.next.size()) +
-               " question=" + String(page_detail.has_question);
+               " question=" + String(page_detail.has_question) + " scroll=" + String(lv_obj_get_scroll_y(body)) + "/" +
+               String(lv_obj_get_scroll_y(body) + lv_obj_get_scroll_bottom(body));
   return out;
 }
 
@@ -210,6 +212,15 @@ bool agent_page_is_open() { return page && !lv_obj_has_flag(page, LV_OBJ_FLAG_HI
 
 void agent_page_turn(int step)
 {
+  // Nothing to pick (the agent works, or no variants): the crown scrolls the message itself. It used to land on a
+  // "Working…" row, and that row's scroll_to_view was what scrolled a long message.
+  if (rows.empty()) {
+    lv_coord_t room = step > 0 ? lv_obj_get_scroll_bottom(body) : lv_obj_get_scroll_top(body);
+    if (room <= 0) return;  // at the end: no tick, so the crown says there is nothing more
+    lv_obj_scroll_by_bounded(body, 0, -step * 48, LV_ANIM_ON);
+    haptic_tick();
+    return;
+  }
   int next = focus + step;
   if (next < -1 || next >= (int)rows.size()) return;
   focus = next;

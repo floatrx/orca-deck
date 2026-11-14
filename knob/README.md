@@ -123,6 +123,9 @@ DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) �
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
 
+**`turn` on orca-deck's main page moves Orca** (a `go` after 1 s): wait for the state (`wait 8` after boot) before
+`swipe left`, or the crown meant for the agent page switches the user's active worktree.
+
 **A dictation test ends with `swipe left`, never `tap`**: a tap on the result sends the transcript to the agent on
 screen for real (2026-11-14: a test tap sent «Перевіряємо.» into a live session). To test the send, select a scratch
 chat session first (`select <worktree>|<agent>`).
