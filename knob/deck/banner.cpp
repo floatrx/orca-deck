@@ -1,5 +1,6 @@
-// The banner: an agent turned needs-you or done while orca-deck is not on screen. It slides in at the top for 3 s
-// over whatever is open; a tap on it opens orca-deck on that agent, a tap elsewhere goes to the app under it.
+// The banner: an agent turned needs-you or done while orca-deck is not on screen, or an app's own alert (the timer
+// ran out). It slides in at the top for 3 s over whatever is open; a tap on it opens orca-deck on that agent (or the
+// app), a tap elsewhere goes to the app under it.
 #include "deck.h"
 
 #define BANNER_MS 3000
@@ -8,6 +9,7 @@
 
 static lv_obj_t *pill, *dot, *title, *text;
 static String wt_id, agent_id;
+static const App *target = nullptr;  // an app's alert: the tap opens it instead of an agent
 static uint32_t hide_at = 0;
 
 static void set_y(void *obj, int32_t y) { lv_obj_align((lv_obj_t *)obj, LV_ALIGN_CENTER, 0, y); }
@@ -28,21 +30,34 @@ static void animate(int32_t y_from, int32_t y_to, lv_opa_t opa_from, lv_opa_t op
   lv_anim_start(&a);
 }
 
+static void show(const String &name, const String &line, uint32_t c)
+{
+  lv_obj_set_style_bg_color(dot, lv_color_hex(c), 0);
+  lv_obj_set_style_border_color(pill, lv_color_hex(c), 0);
+  lv_obj_set_style_text_color(text, lv_color_hex(c), 0);
+  set_text(title, name);
+  set_text(text, line);
+  bool shown = !lv_obj_has_flag(pill, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(pill, LV_OBJ_FLAG_HIDDEN);
+  if (!shown) animate(BANNER_Y - 90, BANNER_Y, LV_OPA_TRANSP, LV_OPA_COVER, 220);
+  hide_at = millis() + BANNER_MS;
+}
+
+void banner_show_app(const App *app, const String &line)
+{
+  if (hub_current() == app) return;  // the app on screen shows it itself
+  buddy_hide();                      // an app's alert wakes the knob
+  target = app;
+  show(app->name, line, app->color);
+}
+
 void banner_show(const String &worktree, const String &agent, const String &name, const String &bucket)
 {
   if (buddy_is_shown()) return;  // Clawd acts the state out himself
   wt_id = worktree;
   agent_id = agent;
-  uint32_t c = color_of(bucket);
-  lv_obj_set_style_bg_color(dot, lv_color_hex(c), 0);
-  lv_obj_set_style_border_color(pill, lv_color_hex(c), 0);
-  lv_obj_set_style_text_color(text, lv_color_hex(c), 0);
-  set_text(title, name);
-  set_text(text, bucket == "attention" ? "needs you" : "done");
-  bool shown = !lv_obj_has_flag(pill, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(pill, LV_OBJ_FLAG_HIDDEN);
-  if (!shown) animate(BANNER_Y - 90, BANNER_Y, LV_OPA_TRANSP, LV_OPA_COVER, 220);
-  hide_at = millis() + BANNER_MS;
+  target = nullptr;
+  show(name, bucket == "attention" ? "needs you" : "done", color_of(bucket));
 }
 
 void banner_hide()
@@ -64,8 +79,10 @@ bool banner_take(bool forced)
     if (p.y > 180 + BANNER_Y + BANNER_H / 2 + 10) return false;  // below the pill: the app's tap
   }
   String wt = wt_id, agent = agent_id;
+  const App *app = target;
   banner_hide();
-  deck_open_agent(wt, agent);
+  if (app) hub_open(app);
+  else deck_open_agent(wt, agent);
   return true;
 }
 

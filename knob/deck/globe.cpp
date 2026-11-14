@@ -1,9 +1,9 @@
 // The hub's background: a dotted Earth turning slowly, as the factory firmware's timer (user's pick, 2026-11-14:
-// "the globe, no satellites"). Land is a bright 2×2 dot, sea a faint 1 px one; a thin atmosphere around it takes
-// the colour of the loudest agent state (inside the screen's rim: the globe fills the face).
+// "the globe, no satellites"). Land is a bright 2×2 dot, sea a faint 1 px one. No atmosphere glow: the user had it
+// removed (a blue rim while agents worked).
 //
 // Cheap per frame: every dot's latitude and base longitude are worked out once (orthographic, tilted); a frame
-// copies the static background (black + atmosphere), shifts the longitudes and plots ~1800 dots into one canvas.
+// copies the static background (the night side), shifts the longitudes and plots ~1800 dots into one canvas.
 #include "deck.h"
 #include <math.h>
 #include "earth_mask.h"
@@ -13,7 +13,6 @@
 #define STEP 6            // dot pitch, px: ~2800 dots across the whole face
 #define TILT 0.38f        // the north pole leans toward the viewer, rad
 #define DEG_PER_S 9.0f    // one turn in 40 s
-#define RIM 0.86f         // the atmosphere glows inward from here to the edge, × R
 
 struct Dot {
   int16_t x, y;      // canvas pixel
@@ -27,7 +26,6 @@ static lv_color_t *buf, *background;
 static Dot *dots;
 static int dot_count = 0;
 static lv_color_t land[4], sea[4];
-static String mood = "-";
 static uint32_t frames = 0, frame_ms_sum = 0, frame_ms_worst = 0, draw_us_sum = 0;
 
 static inline bool is_land(int row, int col)
@@ -55,27 +53,16 @@ static void build_dots()
   }
 }
 
-// The night side of the globe, with the atmosphere glowing inward along the rim in the mood's colour.
-static void paint_background(uint32_t color)
+// The night side of the globe, black around it.
+static void paint_background()
 {
-  lv_color_t night = lv_color_hex(0x07080B), black = lv_color_hex(C_BG), tint = lv_color_hex(color);
+  lv_color_t night = lv_color_hex(0x07080B), black = lv_color_hex(C_BG);
   for (int y = 0; y < SIZE; y++) {
     for (int x = 0; x < SIZE; x++) {
-      float r = sqrtf((float)((x - SIZE / 2) * (x - SIZE / 2) + (y - SIZE / 2) * (y - SIZE / 2))) / R;
-      lv_color_t c = r > 1.0f ? black : night;
-      if (r > RIM && r <= 1.0f) c = lv_color_mix(tint, night, (lv_opa_t)(120 * powf((r - RIM) / (1 - RIM), 2.0f)));
-      background[y * SIZE + x] = c;
+      int dx = x - SIZE / 2, dy = y - SIZE / 2;
+      background[y * SIZE + x] = dx * dx + dy * dy <= R * R ? night : black;
     }
   }
-}
-
-void globe_set_mood(const String &bucket)
-{
-  if (bucket == mood || !background) return;
-  mood = bucket;
-  paint_background(bucket == "attention" ? C_ATTENTION : bucket == "working" ? C_WORKING
-                   : bucket == "done"    ? C_DONE
-                                         : 0x3A4A66);  // idle: a cool night blue
 }
 
 void globe_tick(uint32_t now)
@@ -127,7 +114,7 @@ void globe_create(lv_obj_t *parent)
     sea[s] = lv_color_mix(lv_color_hex(0x5A6E8C), lv_color_hex(0x07080B), (lv_opa_t)(40 + s * 18));
   }
   build_dots();
-  globe_set_mood("idle");
+  paint_background();
   canvas = lv_canvas_create(parent);
   lv_canvas_set_buffer(canvas, buf, SIZE, SIZE, LV_IMG_CF_TRUE_COLOR);
   lv_obj_center(canvas);

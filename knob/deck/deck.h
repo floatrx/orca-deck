@@ -73,6 +73,7 @@ void link_init();
 void push_command(JsonDocument &body);           // any /api/cmd body
 void push_simple(const char *cmd, const String &id = "", const String &pane = "");
 void set_status(bool online, const String &text);
+String status_problem();  // the status line, only when something is wrong (user: «тільки якщо є помилка»)
 bool apply_state(const String &body, const String &via);
 bool apply_detail(const String &body);
 void handle_line(const String &line, LinkKind via);  // S / A / D / K lines from a relay
@@ -146,7 +147,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings;
+extern const App app_deck, app_settings, app_timer;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -160,7 +161,6 @@ void hub_open(const App *app);
 
 // globe.cpp — the hub's background
 void globe_create(lv_obj_t *parent);
-void globe_set_mood(const String &bucket);  // the atmosphere's colour
 void globe_tick(uint32_t now);
 String globe_report();
 
@@ -174,9 +174,15 @@ void buddy_enable(bool on);       // tests: "T saver off" keeps it away
 void buddy_show_now();
 String buddy_report();
 
+// app_timer.cpp
+void timer_create();
+void timer_tick();  // every frame, shown or not: it runs in the background
+String timer_report();
+
 // banner.cpp — needs-you / done of an agent while orca-deck is not on screen
 void banner_create();
 void banner_show(const String &worktree, const String &agent, const String &name, const String &bucket);
+void banner_show_app(const App *app, const String &line);  // an app's alert: a tap opens the app
 bool banner_is_shown();
 void banner_hide();
 bool banner_take(bool forced = false);  // a tap on the banner: opens orca-deck on its agent

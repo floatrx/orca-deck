@@ -651,8 +651,6 @@ static void loop_tick(lv_timer_t *)
     fresh = shared.list;
     got = true;
   }
-  bool online = shared.online;
-  String status = shared.status;
   xSemaphoreGive(shared_mux);
 
   if (got) on_state(fresh);
@@ -674,6 +672,7 @@ static void loop_tick(lv_timer_t *)
   }
   agent_page_tick();
   settings_tick();
+  timer_tick();
   hub_tick();
   banner_tick();
   motion(now);
@@ -690,8 +689,9 @@ static void loop_tick(lv_timer_t *)
     settings_page_refresh();
   }
 
-  set_text(status_label, "• " + status);
-  lv_obj_set_style_text_color(status_label, lv_color_hex(online ? C_DONE : C_ATTENTION), 0);
+  String problem = status_problem();
+  set_text(status_label, problem.length() ? "• " + problem : "");
+  lv_obj_set_style_text_color(status_label, lv_color_hex(C_ATTENTION), 0);
 }
 
 extern "C" void ui_init(void)
@@ -741,6 +741,7 @@ extern "C" void ui_init(void)
 
   settings_page_create();
   agent_page_create();
+  timer_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it
   buddy_create();  // last: the screensaver covers everything

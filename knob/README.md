@@ -17,14 +17,21 @@ fallbacks.
 ## Hub and apps
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
-**swipe down in any app goes back to the hub**. Apps: orca-deck, Settings (`hub.cpp` holds the list; a new app is
+**swipe down in any app goes back to the hub**. Apps: orca-deck, Timer, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
-`knob/tools/earth_mask.py`); its rim glows in the loudest agent state's colour. After 12 s without input in the hub
+`knob/tools/earth_mask.py`). After 12 s without input in the hub
 or Settings, **Clawd** (the Claude Code banner's pixel creature, `buddy.cpp`) takes the screen as the screensaver and
 acts the loudest state out (idle, working, needs you, done, asleep without a link); a tap, the crown or a swipe goes
 back to the hub. Never over orca-deck: that page is the one glanced at.
+
+The link status line shows only when something is wrong (offline, a failed or dropped command); "bridge online"
+stays hidden. A tap that ends a swipe is not a tap: LVGL sends a click on release even after a gesture.
+
+**Timer** works on the knob alone and keeps counting in the background: crown sets the minutes (1–90), tap
+starts / pauses, hold resets, tap twice switches Pomodoro (25 min focus → a 5 min break starts by itself). The end
+buzzes 3× and shows a banner wherever you are; a tap on it opens the Timer.
 
 When an agent turns needs-you or done while orca-deck is not on screen, a **banner** slides in at the top for 3 s
 (project + state, in the state's colour) next to the usual buzz; a tap on it opens orca-deck on that agent (and

@@ -4,7 +4,7 @@
 // Behind the list the Earth turns (globe.cpp).
 #include "deck.h"
 
-static const App *const APPS[] = {&app_deck, &app_settings};
+static const App *const APPS[] = {&app_deck, &app_timer, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -13,6 +13,7 @@ static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *sub
 static int focus = 0;
 static const App *current = nullptr;  // nullptr: the hub is on screen
 static bool pressed = false;
+static bool gestured = false;  // this touch was a swipe: its release must not count as a tap
 static uint32_t test_press_until = 0;
 
 // Per slot, from the centre outward: row height offset, badge size, opacity.
@@ -37,12 +38,9 @@ static void refresh()
     set_text(names[slot], app->name);
     set_text(subs[slot], slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
-  xSemaphoreTake(shared_mux, portMAX_DELAY);
-  String status = shared.status;
-  bool online = shared.online;
-  xSemaphoreGive(shared_mux);
-  set_text(link_label, "• " + status);
-  lv_obj_set_style_text_color(link_label, lv_color_hex(online ? C_DONE : C_ATTENTION), 0);
+  String problem = status_problem();
+  set_text(link_label, problem.length() ? "• " + problem : "");
+  lv_obj_set_style_text_color(link_label, lv_color_hex(C_ATTENTION), 0);
 }
 
 static void open_app(int i);
@@ -135,12 +133,24 @@ static void swipe(lv_dir_t dir)
   if (current && current->swipe) current->swipe(dir);
 }
 
-static void on_click(lv_event_t *) { tap(); }
-static void on_long_press(lv_event_t *) { hold(); }
-static void on_gesture(lv_event_t *) { swipe(lv_indev_get_gesture_dir(lv_indev_get_act())); }
+// LVGL sends a click on release even after a swipe: a quick swipe down went home, then the click reopened the app.
+static void on_click(lv_event_t *)
+{
+  if (!gestured) tap();
+}
+static void on_long_press(lv_event_t *)
+{
+  if (!gestured) hold();
+}
+static void on_gesture(lv_event_t *)
+{
+  gestured = true;
+  swipe(lv_indev_get_gesture_dir(lv_indev_get_act()));
+}
 static void on_pressed(lv_event_t *)
 {
   pressed = true;
+  gestured = false;
   buddy_input();
 }
 static void on_released(lv_event_t *) { pressed = false; }
@@ -153,19 +163,13 @@ void hub_tick()
   if (!current && !buddy_is_shown()) globe_tick(now);
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
   last = now;
-  String loudest = "idle";  // the globe's atmosphere: needs-you > working > done
-  for (const Agent &a : deck_all_agents()) {
-    if (a.bucket == "attention") loudest = "attention";
-    else if (a.bucket == "working" && loudest != "attention") loudest = "working";
-    else if (a.bucket == "done" && loudest == "idle") loudest = "done";
-  }
-  globe_set_mood(loudest);
   refresh();
 }
 
 String hub_report()
 {
   if (buddy_is_shown()) return buddy_report();
+  if (current == &app_timer) return "Timer " + timer_report();
   return current ? String(current->name) : "hub" + globe_report();
 }
 

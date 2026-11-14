@@ -33,6 +33,16 @@ void set_status(bool online, const String &text)
   xSemaphoreGive(shared_mux);
 }
 
+String status_problem()
+{
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  bool online = shared.online;
+  String status = shared.status;
+  xSemaphoreGive(shared_mux);
+  if (!online || status.indexOf("failed") >= 0 || status.indexOf("dropped") >= 0) return status;
+  return "";
+}
+
 static String one_line(const char *text)
 {
   String s = text ? text : "";
