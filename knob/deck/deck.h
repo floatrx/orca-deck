@@ -156,10 +156,37 @@ bool hub_pressing();               // a finger is on the screen (or a test hold 
 String hub_report();
 void hub_test(const String &verb, const String &arg);  // "T tap|hold|swipe|open|home …"
 void hub_tick();
+void hub_open(const App *app);
+
+// globe.cpp — the hub's background
+void globe_create(lv_obj_t *parent);
+void globe_set_mood(const String &bucket);  // the atmosphere's colour
+void globe_tick(uint32_t now);
+String globe_report();
+
+// buddy.cpp — the screensaver (Clawd)
+void buddy_create();
+void buddy_tick(uint32_t now);
+void buddy_input();               // any touch or crown: the idle timer starts again
+bool buddy_is_shown();
+void buddy_hide();
+void buddy_enable(bool on);       // tests: "T saver off" keeps it away
+void buddy_show_now();
+String buddy_report();
+
+// banner.cpp — needs-you / done of an agent while orca-deck is not on screen
+void banner_create();
+void banner_show(const String &worktree, const String &agent, const String &name, const String &bucket);
+bool banner_is_shown();
+void banner_hide();
+bool banner_take(bool forced = false);  // a tap on the banner: opens orca-deck on its agent
+void banner_tick();
 
 // ui.cpp (orca-deck)
 void ui_test_enqueue(const String &line);  // "T …" lines over USB: drive the UI from the Mac (tests)
-void ui_after_send(const String &agent_id);  // Apex: back to the main page, turned to the next waiting agent
+void ui_after_send(const String &agent_id);
+void deck_open_agent(const String &worktree, const String &agent);  // the banner's tap
+std::vector<Agent> deck_all_agents();  // every agent the bridge knows, for the hub's orbits  // Apex: back to the main page, turned to the next waiting agent
 void ui_close_pages();
 String ui_title(const Worktree &w);
 String ui_meta(const Worktree &w, const Agent *a);

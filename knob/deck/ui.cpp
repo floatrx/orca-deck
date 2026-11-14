@@ -316,13 +316,18 @@ static void on_state(std::vector<Worktree> &list)
   // Events: buzz on a fresh needs-you (2) or a working → done (1); remember a fresh done for `follows`.
   int pulses = 0;
   String fresh_done_worktree, fresh_done_agent;
+  const Worktree *alert_w = nullptr;  // the agent for the banner: a needs-you beats a done
+  const Agent *alert_a = nullptr;
   for (const Worktree &w : all_worktrees) {
     for (const Agent &a : w.agents) {
       auto it = last_bucket.find(a.id);
       if (it != last_bucket.end() && it->second != a.bucket) {
-        if (a.bucket == "attention") pulses = 2;
-        else if (a.bucket == "done" && it->second == "working") {
+        if (a.bucket == "attention") {
+          pulses = 2;
+          alert_w = &w, alert_a = &a;
+        } else if (a.bucket == "done" && it->second == "working") {
           pulses = max(pulses, 1);
+          if (!alert_a || alert_a->bucket != "attention") alert_w = &w, alert_a = &a;
           fresh_done_worktree = w.id;
           fresh_done_agent = a.id;
         }
@@ -357,6 +362,7 @@ static void on_state(std::vector<Worktree> &list)
   select_index(i < 0 ? 0 : i);
   render();
   if (pulses) haptic_buzz(pulses);
+  if (alert_a && hub_current() != &app_deck) banner_show(alert_w->id, alert_a->id, ui_title(*alert_w), alert_a->bucket);
 }
 
 static void swap_card();
@@ -421,6 +427,27 @@ void ui_after_send(const String &agent_id)
     picked_agent[worktrees[i].id] = agent;
   }
   render();
+}
+
+std::vector<Agent> deck_all_agents()
+{
+  std::vector<Agent> out;
+  for (const Worktree &w : all_worktrees) out.insert(out.end(), w.agents.begin(), w.agents.end());
+  return out;
+}
+
+void deck_open_agent(const String &worktree, const String &agent)
+{
+  hub_open(&app_deck);
+  ui_close_pages();
+  selected_id = worktree;
+  picked_agent[worktree] = agent;
+  worktrees = visible(all_worktrees, selected_id);
+  int i = index_of(worktree);
+  if (i >= 0) select_index(i);
+  render();
+  swap_card();
+  commit();  // Orca shows the agent too, as a crown choice would
 }
 
 // ---- motion (Apex: comet while working, sonar while it needs you, one calm swap per crown step) ----
@@ -536,6 +563,7 @@ static String deck_subtitle()
 
 static void deck_show()
 {
+  banner_hide();  // orca-deck is on screen now: it shows the agent itself
   ui_close_pages();
   render();
 }
@@ -565,7 +593,7 @@ void ui_test_enqueue(const String &line)
 
 static void test_report(const String &what)
 {
-  String page = hub_report();
+  String page = hub_report() + (banner_is_shown() ? "+banner" : "");
   if (hub_current() == &app_deck) page += settings_page_open() ? "/settings" : agent_page_is_open() ? "/agent" : "/main";
   String sel = worktrees.empty() ? "-" : ui_title(worktrees[index_shown]);
   const Agent *a = worktrees.empty() ? nullptr : shown_agent(worktrees[index_shown]);
@@ -584,7 +612,8 @@ static void run_test(const String &line)
   String verb = space < 0 ? line : line.substring(0, space);
   String arg = space < 0 ? "" : line.substring(space + 1);
   if (verb == "turn") pending_steps += arg.toInt();
-  else if (verb == "tap" || verb == "hold" || verb == "swipe" || verb == "open" || verb == "home") hub_test(verb, arg);
+  else if (verb == "tap" || verb == "hold" || verb == "swipe" || verb == "open" || verb == "home" || verb == "saver")
+    hub_test(verb, arg);
   else if (verb == "select") {  // "select <worktree id>|<agent id>": the knob's own choice, no `go`
     int bar = arg.indexOf('|');
     String wt = bar < 0 ? arg : arg.substring(0, bar);
@@ -600,6 +629,10 @@ static void run_test(const String &line)
     else haptic_tick();
     Serial.printf("sound: ready=%d level=%d\n", sound_ready(), settings.sound);
   } else if (verb == "ble-drop") ble_drop();
+  else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
+    const Agent *a = shown_agent(worktrees[index_shown]);
+    if (a) banner_show(worktrees[index_shown].id, a->id, ui_title(worktrees[index_shown]), "attention");
+  }
   test_report(line);
 }
 
@@ -642,6 +675,7 @@ static void loop_tick(lv_timer_t *)
   agent_page_tick();
   settings_tick();
   hub_tick();
+  banner_tick();
   motion(now);
   if (test_mux) {
     std::vector<String> tests;
@@ -707,7 +741,9 @@ extern "C" void ui_init(void)
 
   settings_page_create();
   agent_page_create();
-  hub_create();  // last: the hub covers everything, and the knob boots into it
+  banner_create();
+  hub_create();  // the hub covers the apps, and the knob boots into it
+  buddy_create();  // last: the screensaver covers everything
 
   sound_init();
   sound_set_level(settings.sound);

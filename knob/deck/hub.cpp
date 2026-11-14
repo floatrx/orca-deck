@@ -1,6 +1,7 @@
 // The hub: the knob's home screen, a watchOS-style list of apps, and the input router. The knob boots into it;
 // the crown moves the list (the centre row is big, the rows toward the rim shrink and fade), a tap opens the app.
 // Swipe down in any app comes back here, to the same row. .work/plans/knob-hub.md
+// Behind the list the Earth turns (globe.cpp).
 #include "deck.h"
 
 static const App *const APPS[] = {&app_deck, &app_settings};
@@ -44,6 +45,19 @@ static void refresh()
   lv_obj_set_style_text_color(link_label, lv_color_hex(online ? C_DONE : C_ATTENTION), 0);
 }
 
+static void open_app(int i);
+
+void hub_open(const App *app)
+{
+  for (int i = 0; i < APP_COUNT; i++) {
+    if (APPS[i] != app) continue;
+    if (current == app) return;
+    if (current) current->hide();
+    current = nullptr;
+    open_app(i);
+  }
+}
+
 static void open_app(int i)
 {
   if (i < 0 || i >= APP_COUNT) return;
@@ -69,8 +83,20 @@ bool hub_is_open() { return current == nullptr; }
 const App *hub_current() { return current; }
 bool hub_pressing() { return pressed || millis() < test_press_until; }
 
+// Any input while the screensaver is up only wakes the knob, into the hub.
+static bool wake()
+{
+  buddy_input();
+  if (!buddy_is_shown()) return false;
+  buddy_hide();
+  haptic_click();
+  hub_home();
+  return true;
+}
+
 void hub_turn(int step)
 {
+  if (wake()) return;
   if (current) {
     if (current->turn) current->turn(step);
     return;
@@ -84,17 +110,21 @@ void hub_turn(int step)
 
 static void tap()
 {
+  if (wake()) return;
+  if (banner_take()) return;
   if (!current) return open_app(focus);
   if (current->tap) current->tap();
 }
 
 static void hold()
 {
+  if (wake()) return;
   if (current && current->hold) current->hold();
 }
 
 static void swipe(lv_dir_t dir)
 {
+  if (wake()) return;
   if (dir == LV_DIR_BOTTOM) {
     if (current) {
       haptic_click();
@@ -108,29 +138,54 @@ static void swipe(lv_dir_t dir)
 static void on_click(lv_event_t *) { tap(); }
 static void on_long_press(lv_event_t *) { hold(); }
 static void on_gesture(lv_event_t *) { swipe(lv_indev_get_gesture_dir(lv_indev_get_act())); }
-static void on_pressed(lv_event_t *) { pressed = true; }
+static void on_pressed(lv_event_t *)
+{
+  pressed = true;
+  buddy_input();
+}
 static void on_released(lv_event_t *) { pressed = false; }
 
 void hub_tick()
 {
   static uint32_t last = 0;
   uint32_t now = millis();
+  buddy_tick(now);
+  if (!current && !buddy_is_shown()) globe_tick(now);
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
   last = now;
+  String loudest = "idle";  // the globe's atmosphere: needs-you > working > done
+  for (const Agent &a : deck_all_agents()) {
+    if (a.bucket == "attention") loudest = "attention";
+    else if (a.bucket == "working" && loudest != "attention") loudest = "working";
+    else if (a.bucket == "done" && loudest == "idle") loudest = "done";
+  }
+  globe_set_mood(loudest);
   refresh();
 }
 
-String hub_report() { return current ? current->name : "hub"; }
+String hub_report()
+{
+  if (buddy_is_shown()) return buddy_report();
+  return current ? String(current->name) : "hub" + globe_report();
+}
 
 void hub_test(const String &verb, const String &arg)
 {
-  if (verb == "tap") tap();
+  if (verb == "open" || verb == "home") {
+    buddy_input();
+    buddy_hide();
+  }
+  if (verb == "tap" && arg == "banner") banner_take(true);
+  else if (verb == "tap") tap();
   else if (verb == "hold") {
     // "hold 2500": a finger held that long (Settings → Connection needs 2 s); plain "hold" is a short one.
     test_press_until = millis() + (arg.length() ? arg.toInt() : 500);
     hold();
   } else if (verb == "swipe") {
     swipe(arg == "left" ? LV_DIR_LEFT : arg == "right" ? LV_DIR_RIGHT : arg == "up" ? LV_DIR_TOP : LV_DIR_BOTTOM);
+  } else if (verb == "saver") {  // "saver off|on|now"
+    if (arg == "now") buddy_show_now();
+    else buddy_enable(arg != "off");
   } else if (verb == "home") {
     hub_home();
   } else if (verb == "open") {
@@ -160,6 +215,7 @@ void hub_create()
   lv_obj_set_style_radius(page, 0, 0);
   lv_obj_set_style_pad_all(page, 0, 0);
   lv_obj_clear_flag(page, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+  globe_create(page);
 
   for (int slot = 0; slot < SLOTS; slot++) {
     bool mid = slot == SLOTS / 2;
@@ -168,7 +224,7 @@ void hub_create()
     lv_obj_t *row = rows[slot] = lv_obj_create(page);
     lv_obj_set_size(row, width, mid ? 76 : 50);
     lv_obj_align(row, LV_ALIGN_CENTER, 0, SLOT_Y[slot]);
-    lv_obj_set_style_bg_opa(row, mid ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(row, mid ? LV_OPA_80 : LV_OPA_TRANSP, 0);  // the globe shows through, faintly
     lv_obj_set_style_bg_color(row, lv_color_hex(0x141518), 0);
     lv_obj_set_style_radius(row, 38, 0);
     lv_obj_set_style_border_width(row, 0, 0);

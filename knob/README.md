@@ -20,6 +20,16 @@ The knob boots into the **hub**, a watchOS-style list of apps: the crown moves t
 **swipe down in any app goes back to the hub**. Apps: orca-deck, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
+Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
+`knob/tools/earth_mask.py`); its rim glows in the loudest agent state's colour. After 12 s without input in the hub
+or Settings, **Clawd** (the Claude Code banner's pixel creature, `buddy.cpp`) takes the screen as the screensaver and
+acts the loudest state out (idle, working, needs you, done, asleep without a link); a tap, the crown or a swipe goes
+back to the hub. Never over orca-deck: that page is the one glanced at.
+
+When an agent turns needs-you or done while orca-deck is not on screen, a **banner** slides in at the top for 3 s
+(project + state, in the state's colour) next to the usual buzz; a tap on it opens orca-deck on that agent (and
+Orca follows), a tap below it goes to the app under it.
+
 ## orca-deck pages and gestures (as Apex: its settings · main · agent)
 
 | | Main | Agent page | orca-deck settings |
@@ -77,7 +87,8 @@ data rides BLE — the same as the cable being out for the bridge link:
 uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "swipe left" "wait 3" "report"
 ```
 
-Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
+Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `alert` (the banner for the agent on
+screen) · `tap banner` · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
 
