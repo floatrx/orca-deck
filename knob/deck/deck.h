@@ -114,11 +114,13 @@ extern Settings settings;
 void settings_load();
 void settings_apply();
 void settings_page_create();
-void settings_page_show(bool show);
+void settings_page_show(bool show, bool deck_rows = false);  // deck_rows: orca-deck's own page, else the system app
 bool settings_page_open();
 void settings_page_turn(int step);
 void settings_page_tap();
 void settings_page_refresh();
+void settings_page_hold();  // Connection: a hold of 2 s forgets the paired relay
+void settings_tick();       // every frame: the 2 s hold
 
 // agent_page.cpp
 void agent_page_create();
@@ -130,7 +132,32 @@ void agent_page_tap();
 void agent_page_tick();  // new detail, timers
 String agent_page_debug();
 
-// ui.cpp
+// hub.cpp — the app launcher (home screen) and the input router. One app is open at a time, or the hub.
+// A new app: one App, one line in hub.cpp's list. Swipe down in any app goes home (the app is never asked).
+struct App {
+  const char *name;
+  const char *icon;                // an LV_SYMBOL_* (Montserrat 20/28 carry them)
+  uint32_t color;
+  void (*show)();
+  void (*hide)();
+  String (*subtitle)();            // the live line under the name in the hub
+  void (*turn)(int step);
+  void (*tap)();
+  void (*hold)();
+  void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
+};
+extern const App app_deck, app_settings;
+void hub_create();
+void hub_turn(int step);           // the crown: the hub's list or the open app
+void hub_home();
+bool hub_is_open();
+const App *hub_current();          // nullptr while the hub is on screen
+bool hub_pressing();               // a finger is on the screen (or a test hold is running)
+String hub_report();
+void hub_test(const String &verb, const String &arg);  // "T tap|hold|swipe|open|home …"
+void hub_tick();
+
+// ui.cpp (orca-deck)
 void ui_test_enqueue(const String &line);  // "T …" lines over USB: drive the UI from the Mac (tests)
 void ui_after_send(const String &agent_id);  // Apex: back to the main page, turned to the next waiting agent
 void ui_close_pages();

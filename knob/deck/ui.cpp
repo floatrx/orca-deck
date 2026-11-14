@@ -1,5 +1,5 @@
-// orca-deck knob: the main page and the page switching. Pages as Apex (watch/Apex/ContentView.swift):
-// Settings ← (swipe right) the main page → (swipe left) the agent page.
+// orca-deck, an app in the hub (hub.cpp): the main page and its pages, as Apex (watch/Apex/ContentView.swift):
+// its settings (swipe right) · the main page · the agent page (swipe left). Swipe down goes to the hub.
 // Main page: crown → workspace (Orca follows after 1 s of rest) · tap → enter · hold → next agent ·
 // double tap → send. Selection rules come from Apex's Selection (watch/ApexCore/.../Selection.swift).
 #include "deck.h"
@@ -447,7 +447,7 @@ static void motion(uint32_t now)
   static uint32_t last = 0;
   if (now - last < 33) return;
   last = now;
-  bool main_page = !settings_page_open() && !agent_page_is_open();
+  bool main_page = hub_current() == &app_deck && !settings_page_open() && !agent_page_is_open();
   bool working = main_page && motion_bucket == "working";
   if (working) {
     lv_obj_clear_flag(comet, LV_OBJ_FLAG_HIDDEN);
@@ -467,7 +467,7 @@ static void motion(uint32_t now)
 
 // ---- input ----
 
-static void on_short_click(lv_event_t *)
+static void deck_tap()
 {
   if (settings_page_open()) return settings_page_tap();
   if (agent_page_is_open()) return agent_page_tap();
@@ -480,12 +480,19 @@ static void on_short_click(lv_event_t *)
   single_tap_at = millis() + DOUBLE_TAP_MS;
 }
 
-static void on_long_press(lv_event_t *)
+static void deck_hold()
 {
   if (!settings_page_open() && !agent_page_is_open()) next_agent();
 }
 
-static void swipe(lv_dir_t dir)
+static void deck_turn(int step)
+{
+  if (settings_page_open()) settings_page_turn(step);
+  else if (agent_page_is_open()) agent_page_turn(step);
+  else turn(step);
+}
+
+static void deck_swipe(lv_dir_t dir)
 {
   single_tap_at = 0;
   if (settings_page_open()) {
@@ -498,7 +505,7 @@ static void swipe(lv_dir_t dir)
   }
   if (dir == LV_DIR_RIGHT) {
     haptic_click();
-    settings_page_show(true);
+    settings_page_show(true, true);
   } else if (dir == LV_DIR_LEFT && !worktrees.empty()) {
     const Worktree &w = worktrees[index_shown];
     const Agent *a = shown_agent(w);
@@ -511,10 +518,37 @@ static void swipe(lv_dir_t dir)
   }
 }
 
-static void on_gesture(lv_event_t *)
+static String deck_subtitle()
 {
-  swipe(lv_indev_get_gesture_dir(lv_indev_get_act()));
+  int attention = 0, working = 0, done = 0;
+  for (const Worktree &w : all_worktrees) {
+    for (const Agent &a : w.agents) {
+      if (a.bucket == "attention") attention++;
+      else if (a.bucket == "working") working++;
+      else if (a.bucket == "done") done++;
+    }
+  }
+  if (attention) return String(attention) + " needs you";
+  if (working) return String(working) + " working";
+  if (done) return String(done) + " done";
+  return all_worktrees.empty() ? "no workspaces" : "all quiet";
 }
+
+static void deck_show()
+{
+  ui_close_pages();
+  render();
+}
+
+static void deck_hide()
+{
+  ui_close_pages();
+  single_tap_at = 0;
+  if (commit_at) commit();  // a crown choice still resting goes to Orca, as it would have
+}
+
+const App app_deck = {"orca-deck", LV_SYMBOL_LIST, C_ATTENTION, deck_show, deck_hide, deck_subtitle,
+                      deck_turn, deck_tap, deck_hold, deck_swipe};
 
 // ---- test channel: "T …" lines over USB drive the UI as the hands would (like Apex's DebugLaunch) ----
 
@@ -531,7 +565,8 @@ void ui_test_enqueue(const String &line)
 
 static void test_report(const String &what)
 {
-  String page = settings_page_open() ? "settings" : agent_page_is_open() ? "agent" : "main";
+  String page = hub_report();
+  if (hub_current() == &app_deck) page += settings_page_open() ? "/settings" : agent_page_is_open() ? "/agent" : "/main";
   String sel = worktrees.empty() ? "-" : ui_title(worktrees[index_shown]);
   const Agent *a = worktrees.empty() ? nullptr : shown_agent(worktrees[index_shown]);
   xSemaphoreTake(shared_mux, portMAX_DELAY);
@@ -549,9 +584,7 @@ static void run_test(const String &line)
   String verb = space < 0 ? line : line.substring(0, space);
   String arg = space < 0 ? "" : line.substring(space + 1);
   if (verb == "turn") pending_steps += arg.toInt();
-  else if (verb == "tap") on_short_click(nullptr);
-  else if (verb == "hold") on_long_press(nullptr);
-  else if (verb == "swipe") swipe(arg == "left" ? LV_DIR_LEFT : LV_DIR_RIGHT);
+  else if (verb == "tap" || verb == "hold" || verb == "swipe" || verb == "open" || verb == "home") hub_test(verb, arg);
   else if (verb == "select") {  // "select <worktree id>|<agent id>": the knob's own choice, no `go`
     int bar = arg.indexOf('|');
     String wt = bar < 0 ? arg : arg.substring(0, bar);
@@ -595,11 +628,7 @@ static void loop_tick(lv_timer_t *)
   if (steps) {
     pending_steps -= steps;
     int dir = steps > 0 ? 1 : -1;
-    for (int k = 0; k != steps; k += dir) {
-      if (settings_page_open()) settings_page_turn(dir);
-      else if (agent_page_is_open()) agent_page_turn(dir);
-      else turn(dir);
-    }
+    for (int k = 0; k != steps; k += dir) hub_turn(dir);
   }
 
   uint32_t now = millis();
@@ -611,6 +640,8 @@ static void loop_tick(lv_timer_t *)
     push_simple("enter");
   }
   agent_page_tick();
+  settings_tick();
+  hub_tick();
   motion(now);
   if (test_mux) {
     std::vector<String> tests;
@@ -636,9 +667,6 @@ extern "C" void ui_init(void)
   lv_obj_t *screen = lv_scr_act();
   lv_obj_set_style_bg_color(screen, lv_color_hex(C_BG), 0);
   lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_event_cb(screen, on_short_click, LV_EVENT_SHORT_CLICKED, NULL);
-  lv_obj_add_event_cb(screen, on_long_press, LV_EVENT_LONG_PRESSED, NULL);
-  lv_obj_add_event_cb(screen, on_gesture, LV_EVENT_GESTURE, NULL);
 
   // The halo: a thin ring at the edge in the colour of the agent on screen.
   halo = lv_arc_create(screen);
@@ -679,6 +707,7 @@ extern "C" void ui_init(void)
 
   settings_page_create();
   agent_page_create();
+  hub_create();  // last: the hub covers everything, and the knob boots into it
 
   sound_init();
   sound_set_level(settings.sound);

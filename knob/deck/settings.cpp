@@ -1,5 +1,7 @@
-// Settings: stored in NVS, shown on the left page (swipe right from the main page), as in Apex.
-// The crown moves between rows (the focused one sits in the middle), a tap changes the value or runs the action.
+// Settings: stored in NVS. Two pages share this code: the Settings app in the hub (the knob's own rows) and
+// orca-deck's page (swipe right in it, as Apex): Hide inactive, Hide completed.
+// The crown moves between rows (the focused one sits in the middle), a tap changes the value. Connection forgets
+// the paired relay only on a 2 s hold: a double tap did it by accident (2026-11-14).
 #include "deck.h"
 #include <Preferences.h>
 #include "lcd_bl_pwm_bsp.h"
@@ -11,10 +13,16 @@ static Preferences prefs;
 static lv_obj_t *page, *title, *hint;
 static const int VISIBLE = 5;
 static lv_obj_t *names[VISIBLE], *values[VISIBLE];
-static int focus = 0;
-static uint32_t forget_armed_until = 0;  // "Forget relay" needs a second tap within 3 s
+static int focus = 0;               // index into `rows`
+static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: not holding
 
-enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROWS };
+#define FORGET_HOLD_MS 2000
+#define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
+
+enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS };
+static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
+static const std::vector<int> *rows = &SYSTEM_ROWS;
 
 void settings_load()
 {
@@ -57,7 +65,7 @@ static String row_value(int row)
 {
   switch (row) {
     case ROW_LINK: {
-      if (forget_armed_until && millis() < forget_armed_until) return "tap: forget";
+      if (forget_hold_from) return "keep holding…";
       xSemaphoreTake(shared_mux, portMAX_DELAY);
       LinkKind link = shared.link;
       xSemaphoreGive(shared_mux);
@@ -77,38 +85,31 @@ void settings_page_refresh()
 {
   if (!page || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
   for (int slot = 0; slot < VISIBLE; slot++) {
-    int row = focus + slot - VISIBLE / 2;
-    bool used = row >= 0 && row < ROWS;
-    set_text(names[slot], used ? row_name(row) : "");
-    set_text(values[slot], used ? row_value(row) : "");
+    int i = focus + slot - VISIBLE / 2;
+    bool used = i >= 0 && i < (int)rows->size();
+    set_text(names[slot], used ? row_name((*rows)[i]) : "");
+    set_text(values[slot], used ? row_value((*rows)[i]) : "");
   }
-  set_text(hint, focus == ROW_LINK ? "tap twice: forget the paired relay" : "tap to change · swipe ← back");
+  bool deck = rows == &DECK_ROWS;
+  set_text(hint, (*rows)[focus] == ROW_LINK ? "hold 2 s: forget the paired relay"
+                 : deck                     ? "tap to change · swipe left: back"
+                                            : "tap to change · swipe down: home");
 }
 
 void settings_page_turn(int step)
 {
   int next = focus + step;
-  if (next < 0 || next >= ROWS) return;
+  if (next < 0 || next >= (int)rows->size()) return;
   focus = next;
-  forget_armed_until = 0;
+  forget_hold_from = 0;
   haptic_tick();
   settings_page_refresh();
 }
 
 void settings_page_tap()
 {
-  switch (focus) {
-    case ROW_LINK:
-      if (forget_armed_until && millis() < forget_armed_until) {
-        forget_armed_until = 0;
-        ble_forget();
-        haptic_buzz(1);
-      } else {
-        forget_armed_until = millis() + 3000;
-        haptic_click();
-      }
-      settings_page_refresh();
-      return;
+  switch ((*rows)[focus]) {
+    case ROW_LINK: return;  // forgetting takes a hold, never a tap
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
     case ROW_HIDE_COMPLETED: settings.hide_completed = (settings.hide_completed + 1) % 3; break;
@@ -120,6 +121,28 @@ void settings_page_tap()
   settings_apply();
   haptic_sample();  // the new strength / sound level, felt at once
   settings_page_refresh();
+}
+
+void settings_page_hold()
+{
+  if (!settings_page_open() || (*rows)[focus] != ROW_LINK) return;
+  forget_hold_from = millis() - LONG_PRESS_MS;
+  haptic_click();
+  settings_page_refresh();
+}
+
+void settings_tick()
+{
+  if (!forget_hold_from) return;
+  if (!hub_pressing() || !settings_page_open()) {
+    forget_hold_from = 0;  // let go early: nothing happens
+    settings_page_refresh();
+  } else if (millis() - forget_hold_from >= FORGET_HOLD_MS) {
+    forget_hold_from = 0;
+    ble_forget();
+    haptic_buzz(1);
+    settings_page_refresh();
+  }
 }
 
 void settings_page_create()
@@ -146,12 +169,15 @@ void settings_page_create()
   hint = make_label(page, &deck_14, C_MUTED, 122, 210);
 }
 
-void settings_page_show(bool show)
+void settings_page_show(bool show, bool deck_rows)
 {
   if (show) {
+    rows = deck_rows ? &DECK_ROWS : &SYSTEM_ROWS;
+    focus = 0;
+    set_text(title, deck_rows ? "ORCA-DECK" : "SETTINGS");
     lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(page);
-    forget_armed_until = 0;
+    forget_hold_from = 0;
     settings_page_refresh();
   } else {
     lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
@@ -159,3 +185,17 @@ void settings_page_show(bool show)
 }
 
 bool settings_page_open() { return page && !lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN); }
+
+// The Settings app in the hub.
+static void app_show() { settings_page_show(true); }
+static void app_hide() { settings_page_show(false); }
+static String app_subtitle()
+{
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  LinkKind link = shared.link;
+  xSemaphoreGive(shared_mux);
+  return String(link_name(link)) + (ble_connected() ? " · paired" : "");
+}
+
+const App app_settings = {"Settings", LV_SYMBOL_SETTINGS, 0x9A9890, app_show, app_hide, app_subtitle,
+                          settings_page_turn, settings_page_tap, settings_page_hold, nullptr};

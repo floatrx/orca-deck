@@ -14,16 +14,23 @@ fallbacks.
 | `ble-spike/` | Phase 1 spike: python cannot own Bluetooth on macOS, an app bundle can |
 | `libraries/lv_conf.h` | LVGL 8.4 config (pool in PSRAM; Montserrat 20 / 28 / 48 for symbols) |
 
-## Pages and gestures (as Apex: Settings ← main → agent)
+## Hub and apps
 
-| | Main | Agent page | Settings |
+The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
+**swipe down in any app goes back to the hub**. Apps: orca-deck, Settings (`hub.cpp` holds the list; a new app is
+an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
+
+## orca-deck pages and gestures (as Apex: its settings · main · agent)
+
+| | Main | Agent page | orca-deck settings |
 |---|---|---|---|
 | crown | workspace (Orca follows after 1 s) | row | row |
 | tap | `enter` | tick a variant / Send / answer | change the value |
 | hold | next agent of the workspace | — | — |
 | double tap | `send` (Enter in Orca) | — | — |
-| swipe → | Settings | back | — |
-| swipe ← | agent page | — | back |
+| swipe right | its settings | back | — |
+| swipe left | agent page | — | back |
+| swipe down | hub | hub | hub |
 
 - **Main page:** a ring of dots (one per worktree, coloured by its lead agent), the project big, the branch
   small, the agent's last message. A comet runs round the rim while the agent works; the halo pulses while it
@@ -32,8 +39,9 @@ fallbacks.
   (`say`, several ticked go as a numbered list); a pending question shows its options and a tap answers it. No
   variants while the agent works. After Send / an answer: back to the main page, turned to the next waiting
   agent.
-- **Settings** (NVS): Connection (tap twice: forget the paired relay), Wi-Fi off / fallback, Hide inactive, Hide
-  completed (off / 1 h / 1 day), Haptics 0–3, Sound off / quiet / on, Brightness 40–100 %.
+- **orca-deck settings** (NVS): Hide inactive, Hide completed (off / 1 h / 1 day).
+- **Settings app** (NVS): Connection (**hold 2 s**: forget the paired relay), Wi-Fi off / fallback, Haptics 0–3,
+  Sound off / quiet / on, Brightness 40–100 %. The fonts carry `→` but no `←` / `↓`: write directions in words.
 
 ## Links
 
@@ -69,9 +77,18 @@ data rides BLE — the same as the cable being out for the bridge link:
 uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "swipe left" "wait 3" "report"
 ```
 
-Verbs: `turn N` · `tap` · `hold` · `swipe left|right` · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
+Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
+
+**`hold 2500` on Settings → Connection forgets the bond for real** — the Mac keeps its key and every connect fails
+with "Peer removed pairing information". Re-pair without rebuilding the app (a rebuild makes macOS ask for
+Bluetooth again): System Settings → Bluetooth → orca-deck-knob → Forget; add `--pair` to the LaunchAgent's
+`ProgramArguments` (`PlistBuddy -c "Add :ProgramArguments: string --pair"`), `launchctl bootout` + `bootstrap`,
+click Connect, then delete the `--pair` entry and restart the agent again.
+
+**A boot loop hides the port from esptool** ("No serial data received"): power the knob off, unplug USB-C for 5 s,
+plug it back and power on, then upload at once.
 
 `knob/test/stranger/` is a BLE central for the board's second chip (ESP32-U4WDH, the other USB-C orientation): it
 tries to connect and write a command — the knob must drop it.
