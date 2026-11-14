@@ -55,6 +55,8 @@ struct MacStatus {
   bool muted = false, charging = false;
   String output;    // the Mac's sound output device
   String source, title;  // what plays: "YouTube" / "Music" / "Spotify" and the track; "" when nothing
+  int claude_session = -1, claude_week = -1;     // Claude plan limits, % (-1: not known / no window)
+  int session_reset_min = -1, week_reset_min = -1;
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -169,7 +171,7 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -195,6 +197,10 @@ void buddy_hide();
 void buddy_enable(bool on);       // tests: "T saver off" keeps it away
 void buddy_show_now();
 String buddy_report();
+String claude_mood();
+String claude_limits(bool with_reset);  // "5h 34% · wk 79%" (+ " · 1d 2h" to the week's reset); "" when unknown  // the loudest agent state: attention / working / done / idle; sleep without a link
+void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const String &mood, uint32_t now, bool bang_ok,
+                lv_color_t bg);
 
 // app_timer.cpp
 void timer_create();
@@ -210,6 +216,11 @@ String clock_report();
 void mac_create();
 void mac_tick();  // every frame: sends the batched volume, takes the Mac's numbers
 String mac_report();
+
+// app_jog.cpp
+void jog_create();
+void jog_tick();
+String jog_report();
 
 // mic.cpp — the PDM microphone (spike: T mic <seconds>)
 void mic_test(int seconds);

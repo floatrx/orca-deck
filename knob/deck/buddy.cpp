@@ -25,6 +25,9 @@ static const char *const SPRITE[ROWS] = {
 };
 
 static lv_obj_t *page, *canvas, *caption, *zz;
+// Claude's plan limits round the rim (user, 2026-11-14: «на заставці ліміти гарно показати»): the outer arc is the
+// week, the inner one the 5 h window; open at the bottom, where the numbers sit.
+static lv_obj_t *week_arc, *session_arc, *limits_label;
 static lv_color_t *buf;
 static bool shown = false, enabled = true;
 static uint32_t last_input = 0;
@@ -32,14 +35,18 @@ static String mood = "idle";
 
 static const uint32_t ORANGE = 0xD97757, YELLOW = 0xFFD166;
 
-static void fill(int x, int y, int w, int h, lv_color_t c)
+static void fill(lv_color_t *b, int bw, int bh, int x, int y, int w, int h, lv_color_t c)
 {
-  for (int j = max(0, y); j < min(CH, y + h); j++) {
-    for (int i = max(0, x); i < min(CW, x + w); i++) buf[j * CW + i] = c;
+  for (int j = max(0, y); j < min(bh, y + h); j++) {
+    for (int i = max(0, x); i < min(bw, x + w); i++) b[j * bw + i] = c;
   }
 }
 
-static void draw(uint32_t now)
+// Clawd acting out `mood`, into any RGB565 buffer: the screensaver (14 × 26 px pixels) and the hub's Claude badge
+// (a few px per pixel). Sizes of the hop, the arms and the eyes scale with the pixel height. `bang`: room above the
+// head for the needs-you "!". bg: the buffer's background.
+void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const String &mood, uint32_t now, bool bang_ok,
+                lv_color_t bg)
 {
   char m[ROWS][COLS + 1];
   for (int r = 0; r < ROWS; r++) memcpy(m[r], SPRITE[r], COLS + 1);
@@ -56,57 +63,76 @@ static void draw(uint32_t now)
     set(1, 5, '#'), set(1, 12, '#');
     set(1, left ? 4 : 6, '.'), set(1, left ? 11 : 13, '.');
   } else if (mood == "attention") {
-    float ph = fmodf(t * 1.4f, 1.0f);
-    dy = -(int)(fmaxf(0, sinf(ph * M_PI)) * 34);
-    bang = true;
+    float phase = fmodf(t * 1.4f, 1.0f);
+    dy = -(int)(fmaxf(0, sinf(phase * M_PI)) * ph * 1.3f);
+    bang = bang_ok;
   } else if (mood == "done") {
     bool up = (now / 330) % 2;  // arms up and down
     set(2, 1, '.'), set(2, 16, '.');
     set(1, 1, '#'), set(1, 16, '#');
-    if (up) set(0, 1, '#'), set(0, 16, '#'), dy = -10;
+    if (up) set(0, 1, '#'), set(0, 16, '#'), dy = -max(1, (int)(ph * 0.4f));
   } else if (mood == "sleep") {
     dim = true;
     line_eyes = true;
     set(1, 5, '#'), set(1, 12, '#');
-    dy = (int)(sinf(t) * 3);
+    dy = (int)(sinf(t) * ph * 0.12f);
   } else {  // idle: a slow bob and a blink every ~4 s
-    dy = (int)(sinf(t * 2) * 4);
+    dy = (int)(sinf(t * 2) * ph * 0.15f);
     if (fmodf(t, 4.0f) > 3.85f) set(1, 5, '#'), set(1, 12, '#');
   }
 
-  lv_color_t bg = lv_color_hex(C_BG);
   lv_color_t body = dim ? lv_color_mix(lv_color_hex(ORANGE), bg, 110) : lv_color_hex(ORANGE);
-  fill(0, 0, CW, CH, bg);
-  int y0 = BASE_Y + dy;
+  fill(b, bw, bh, 0, 0, bw, bh, bg);
+  int x0 = (bw - COLS * pw) / 2, y0 = base_y + dy;
   for (int r = 0; r < ROWS; r++) {
     for (int c = 0; c < COLS; c++) {
-      if (m[r][c] == '#') fill(c * PW, y0 + r * PH, PW, PH, body);
+      if (m[r][c] == '#') fill(b, bw, bh, x0 + c * pw, y0 + r * ph, pw, ph, body);
     }
   }
   if (line_eyes) {
     lv_color_t eye = lv_color_hex(0x1A1210);
-    for (int c : {4, 11}) fill(c * PW, y0 + PH + PH / 2, 2 * PW, 4, eye);
+    for (int c : {4, 11}) fill(b, bw, bh, x0 + c * pw, y0 + ph + ph / 2, 2 * pw, max(1, ph / 6), eye);
   }
   if (bang) {  // "!" above the head: a bar and a dot
     lv_color_t y = lv_color_hex(YELLOW);
-    fill(8 * PW, y0 - 3 * PH + 6, 2 * PW, PH + 10, y);
-    fill(8 * PW, y0 - PH - 2, 2 * PW, 14, y);
+    fill(b, bw, bh, x0 + 8 * pw, y0 - 3 * ph + ph / 4, 2 * pw, ph + ph * 2 / 5, y);
+    fill(b, bw, bh, x0 + 8 * pw, y0 - ph - ph / 12, 2 * pw, ph / 2, y);
   }
-  lv_obj_invalidate(canvas);
+}
 
+static void draw(uint32_t now)
+{
+  clawd_draw(buf, CW, CH, PW, PH, BASE_Y, mood, now, true, lv_color_hex(C_BG));
+  lv_obj_invalidate(canvas);
+  float t = now / 1000.0f;
   if (mood == "sleep") {
-    float ph = fmodf(t * 0.5f, 1.0f);
+    float phase = fmodf(t * 0.5f, 1.0f);
     lv_obj_clear_flag(zz, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(zz, LV_ALIGN_CENTER, 70 + (int)(ph * 12), -70 - (int)(ph * 30));
-    lv_obj_set_style_opa(zz, (lv_opa_t)(255 * sinf(ph * M_PI)), 0);
+    lv_obj_align(zz, LV_ALIGN_CENTER, 70 + (int)(phase * 12), -70 - (int)(phase * 30));
+    lv_obj_set_style_opa(zz, (lv_opa_t)(255 * sinf(phase * M_PI)), 0);
   } else {
     lv_obj_add_flag(zz, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
-// The loudest state among the agents; "sleep" when no relay link is alive.
-static String loudest()
+static void paint_limits()
 {
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  MacStatus mac = shared.mac;
+  xSemaphoreGive(shared_mux);
+  lv_arc_set_value(week_arc, max(0, mac.claude_week));
+  lv_arc_set_value(session_arc, max(0, mac.claude_session));
+  mac.claude_week >= 0 ? lv_obj_clear_flag(week_arc, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(week_arc, LV_OBJ_FLAG_HIDDEN);
+  mac.claude_session >= 0 ? lv_obj_clear_flag(session_arc, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(session_arc, LV_OBJ_FLAG_HIDDEN);
+  // The week turns orange past 80 %: close to the wall.
+  lv_obj_set_style_arc_color(week_arc, lv_color_hex(mac.claude_week >= 80 ? C_ATTENTION : C_WORKING), LV_PART_INDICATOR);
+  set_text(limits_label, claude_limits(true));
+}
+
+// The loudest state among the agents; "sleep" when no relay link is alive.
+String claude_mood()
+{
+  if (!shared_mux) return "sleep";
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   bool online = shared.online;
   xSemaphoreGive(shared_mux);
@@ -123,8 +149,9 @@ static String loudest()
 static void show()
 {
   shown = true;
-  mood = loudest();
+  mood = claude_mood();
   set_text(caption, app_deck.subtitle());
+  paint_limits();
   lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(page);
   banner_hide();
@@ -162,8 +189,9 @@ void buddy_tick(uint32_t now)
   last = now;
   if (now - last_mood >= 1000) {  // the agents change slowly: once a second
     last_mood = now;
-    mood = loudest();
+    mood = claude_mood();
     set_text(caption, app_deck.subtitle());
+    paint_limits();
   }
   draw(now);
 }
@@ -188,9 +216,28 @@ void buddy_create()
   lv_canvas_set_buffer(canvas, buf, CW, CH, LV_IMG_CF_TRUE_COLOR);
   lv_obj_align(canvas, LV_ALIGN_CENTER, 0, -52);
   lv_obj_clear_flag(canvas, LV_OBJ_FLAG_CLICKABLE);
-  fill(0, 0, CW, CH, lv_color_hex(C_BG));
+  fill(buf, CW, CH, 0, 0, CW, CH, lv_color_hex(C_BG));
 
-  caption = make_label(page, &deck_14, C_MUTED, 110, 220);
+  for (int k = 0; k < 2; k++) {
+    lv_obj_t *arc = lv_arc_create(page);
+    int size = k ? 326 : 348;
+    lv_obj_set_size(arc, size, size);
+    lv_obj_center(arc);
+    lv_arc_set_rotation(arc, 135);
+    lv_arc_set_bg_angles(arc, 0, 270);
+    lv_arc_set_range(arc, 0, 100);
+    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(arc, 5, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(arc, lv_color_hex(0x1C1D21), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 5, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(arc, lv_color_hex(k ? ORANGE : C_WORKING), LV_PART_INDICATOR);
+    lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
+    (k ? session_arc : week_arc) = arc;
+  }
+  caption = make_label(page, &deck_14, C_MUTED, 104, 220);
+  limits_label = make_label(page, &deck_14, C_DETAIL, 128, 200);
   zz = lv_label_create(page);
   lv_obj_set_style_text_font(zz, &deck_bold_30, 0);
   lv_obj_set_style_text_color(zz, lv_color_hex(C_MUTED), 0);

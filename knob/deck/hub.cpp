@@ -6,7 +6,7 @@
 #include <math.h>
 #include <time.h>
 
-static const App *const APPS[] = {&app_deck, &app_timer, &app_mac, &app_clock, &app_settings};
+static const App *const APPS[] = {&app_deck, &app_timer, &app_mac, &app_jog, &app_clock, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -14,6 +14,31 @@ static lv_obj_t *page, *link_label;
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
 // The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
 static lv_obj_t *hands[SLOTS][2];
+// The Claude row's badge is Clawd himself on black, acting out the loudest agent state, as on the screensaver
+// (user, 2026-11-14). One small canvas per slot; drawn ~12 fps while the hub is on screen.
+static lv_obj_t *clawd_canvas[SLOTS];
+static lv_color_t *clawd_buf[SLOTS];
+
+static void clawd_badge(int slot, bool on)
+{
+  if (!clawd_canvas[slot]) return;
+  on ? lv_obj_clear_flag(clawd_canvas[slot], LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(clawd_canvas[slot], LV_OBJ_FLAG_HIDDEN);
+}
+
+static void draw_clawds(uint32_t now)
+{
+  static uint32_t last = 0;
+  if (now - last < 80) return;
+  last = now;
+  String mood = claude_mood();
+  for (int slot = 0; slot < SLOTS; slot++) {
+    if (!clawd_canvas[slot] || lv_obj_has_flag(clawd_canvas[slot], LV_OBJ_FLAG_HIDDEN)) continue;
+    int size = lv_obj_get_width(badges[slot]);
+    int pw = size >= 56 ? 3 : size >= 40 ? 2 : 1, ph = size >= 56 ? 5 : size >= 40 ? 4 : 2;
+    clawd_draw(clawd_buf[slot], size, size, pw, ph, (size - 5 * ph) / 2 + ph / 2, mood, now, false, lv_color_hex(0x000000));
+    lv_obj_invalidate(clawd_canvas[slot]);
+  }
+}
 static lv_point_t hand_pts[SLOTS][2][2];
 
 static void clock_face(int slot, bool on)
@@ -63,8 +88,10 @@ static void refresh()
     }
     const App *app = APPS[i];
     lv_obj_clear_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(badges[slot], lv_color_hex(app->color), 0);
-    set_text(icons[slot], app == &app_clock ? "" : app->icon);
+    bool claude = app == &app_deck;
+    lv_obj_set_style_bg_color(badges[slot], lv_color_hex(claude ? 0x000000 : app->color), 0);
+    clawd_badge(slot, claude);
+    set_text(icons[slot], app == &app_clock || claude ? "" : app->icon);
     clock_face(slot, app == &app_clock);
     set_text(names[slot], app->name);
     set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
@@ -254,7 +281,10 @@ void hub_tick()
     return;
   }
   buddy_tick(now);
-  if (!current && !buddy_is_shown()) globe_tick(now);
+  if (!current && !buddy_is_shown()) {
+    globe_tick(now);
+    draw_clawds(now);
+  }
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
   last = now;
   refresh();
@@ -266,6 +296,7 @@ String hub_report()
   if (current == &app_timer) return "Timer " + timer_report();
   if (current == &app_clock) return "Clock " + clock_report();
   if (current == &app_mac) return "Mac " + mac_report();
+  if (current == &app_jog) return "Jog " + jog_report();
   return current ? String(current->name) : (booting ? "hub(boot)" : "hub") + globe_report();
 }
 
@@ -336,10 +367,19 @@ void hub_create()
     lv_obj_set_size(badge, BADGE[slot], BADGE[slot]);
     lv_obj_align(badge, LV_ALIGN_LEFT_MID, mid ? 8 : 14, 0);
     lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_clip_corner(badge, true, 0);  // the Claude badge's square canvas stays inside the circle
     lv_obj_set_style_border_width(badge, 0, 0);
     lv_obj_set_style_pad_all(badge, 0, 0);
     lv_obj_clear_flag(badge, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
 
+    clawd_buf[slot] = (lv_color_t *)ps_malloc(BADGE[slot] * BADGE[slot] * sizeof(lv_color_t));
+    if (clawd_buf[slot]) {
+      clawd_canvas[slot] = lv_canvas_create(badge);
+      lv_canvas_set_buffer(clawd_canvas[slot], clawd_buf[slot], BADGE[slot], BADGE[slot], LV_IMG_CF_TRUE_COLOR);
+      lv_obj_center(clawd_canvas[slot]);
+      lv_obj_clear_flag(clawd_canvas[slot], LV_OBJ_FLAG_CLICKABLE);
+      lv_obj_add_flag(clawd_canvas[slot], LV_OBJ_FLAG_HIDDEN);
+    }
     for (int h = 0; h < 2; h++) {
       lv_obj_t *hand = hands[slot][h] = lv_line_create(badge);
       lv_obj_set_pos(hand, 0, 0);

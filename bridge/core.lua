@@ -221,7 +221,7 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer" or cmd == "mac") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil
@@ -238,6 +238,52 @@ function core.macProblem(message)
     if not v or v < -100 or v > 100 then return "volume needs a value step from -100 to 100" end
   end
   return nil
+end
+
+--- The knob's Jog Wheel (cmd "jog"): the crown as a precise wheel for the front app.
+core.JOG_MODES = { scroll = true, undo = true, tab = true, zoom = true, frame = true }
+core.JOG_MAX = 20  -- detents per command: the knob batches every 80 ms, a fast spin stays below this
+
+--- Why a jog command cannot run, or nil. `value`: signed detents (+ = down / redo / next / in / forward);
+--- `reset` (zoom only) instead of a value: back to 100 %.
+function core.jogProblem(message)
+  if not core.JOG_MODES[message.mode] then return "jog needs mode scroll|undo|tab|zoom|frame" end
+  if message.reset then
+    if message.mode ~= "zoom" then return "only zoom resets" end
+    return nil
+  end
+  local v = tonumber(message.value)
+  if not v or v == 0 or v ~= math.floor(v) or math.abs(v) > core.JOG_MAX then
+    return "jog needs a whole value from -" .. core.JOG_MAX .. " to " .. core.JOG_MAX
+  end
+  return nil
+end
+
+--- Claude plan limits from GET api.anthropic.com/api/oauth/usage (the endpoint Orca's status bar uses):
+--- { session = %, week = %, sessionResets = "iso", weekResets = "iso" }; nil when the answer has neither.
+function core.claudeUsageOf(doc)
+  if type(doc) ~= "table" then return nil end
+  local function pct(window)
+    local u = type(window) == "table" and tonumber(window.utilization) or nil
+    return u and math.floor(u + 0.5) or nil
+  end
+  local out = { session = pct(doc.five_hour), week = pct(doc.seven_day) }
+  if out.session == nil and out.week == nil then return nil end
+  out.sessionResets = type(doc.five_hour) == "table" and doc.five_hour.resets_at or nil
+  out.weekResets = type(doc.seven_day) == "table" and doc.seven_day.resets_at or nil
+  return out
+end
+
+--- Keychain services where Claude Code may keep the OAuth credentials of `configDir` (its CLAUDE_CONFIG_DIR):
+--- "Claude Code-credentials-<first 8 hex of sha256(configDir)>" for a custom dir, then the default one.
+--- `sha256hex` is injected (hs.hash.SHA256 in the bridge) so this stays testable.
+function core.credentialServices(configDir, sha256hex)
+  local out = {}
+  if type(configDir) == "string" and configDir ~= "" then
+    out[#out + 1] = "Claude Code-credentials-" .. sha256hex(configDir):sub(1, 8)
+  end
+  out[#out + 1] = "Claude Code-credentials"
+  return out
 end
 
 --- CPU busy percent between two hs.host.cpuUsageTicks() samples (their `overall` tables); nil without a previous.

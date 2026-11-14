@@ -4,7 +4,8 @@
 #include "deck.h"
 
 #define BANNER_MS 3000
-#define BANNER_Y -118   // centre of the pill, from the screen centre
+#define BANNER_Y -96    // centre of the pill: at -118 the round edge clipped its corners (the screen is ~208 px
+                        // wide there, the pill 250)
 #define BANNER_H 58
 
 static lv_obj_t *pill, *dot, *title, *text;

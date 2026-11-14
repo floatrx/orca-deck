@@ -163,6 +163,10 @@ static void apply_mac(const String &body)
   mac.output = doc["output"] | "";
   mac.source = doc["source"] | "";
   mac.title = doc["title"] | "";
+  mac.claude_session = doc["cs"] | -1;
+  mac.claude_week = doc["cw"] | -1;
+  mac.session_reset_min = doc["csr"] | -1;
+  mac.week_reset_min = doc["cwr"] | -1;
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;

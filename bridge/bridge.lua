@@ -502,6 +502,64 @@ local function askNowPlaying()
   deckBridge.nowPlayingTask:start()
 end
 
+-- Claude plan limits for the knob (user, 2026-11-14): the same GET api.anthropic.com/api/oauth/usage Orca's status
+-- bar makes, with the OAuth token of Orca's active Claude account, read from the Keychain by `security` here in
+-- Hammerspoon. The token never leaves this function: not logged, not stored, not sent to the knob — only percents.
+-- macOS may ask once to let `security` read the item. Every 5 min, only while /api/mac is read.
+local ORCA_CLI = "/Applications/Orca.app/Contents/Resources/bin/orca"
+local CLAUDE_USAGE_SECONDS = 300
+
+local function activeClaudeHome(done)
+  hs.task.new(ORCA_CLI, function(_, out)
+    local ok, doc = pcall(hs.json.decode, out or "")
+    local claude = ok and type(doc) == "table" and doc.result and doc.result.claude or nil
+    local home
+    for _, account in ipairs(claude and claude.accounts or {}) do
+      if account.id == claude.activeAccountId then home = account.home end
+    end
+    done(home)
+  end, { "account", "list", "--json" }):start()
+end
+
+local function claudeToken(services, i, done)
+  if i > #services then return done(nil) end
+  hs.task.new("/usr/bin/security", function(code, out)
+    local ok, doc = pcall(hs.json.decode, code == 0 and out or "")
+    local token = ok and type(doc) == "table" and type(doc.claudeAiOauth) == "table" and doc.claudeAiOauth.accessToken
+    if type(token) == "string" and token ~= "" then return done(token) end
+    claudeToken(services, i + 1, done)
+  end, { "find-generic-password", "-s", services[i], "-w" }):start()
+end
+
+local function refreshClaudeUsage()
+  if deckBridge.claudeUsageBusy then return end
+  deckBridge.claudeUsageBusy = true
+  activeClaudeHome(function(home)
+    local services = core.credentialServices(home, function(text) return hs.hash.SHA256(text) end)
+    claudeToken(services, 1, function(token)
+      if not token then
+        deckBridge.claudeUsageBusy = false
+        deckBridge.claudeUsageError = "no Claude credentials"
+        return
+      end
+      hs.http.asyncGet("https://api.anthropic.com/api/oauth/usage",
+        { Authorization = "Bearer " .. token, ["anthropic-beta"] = "oauth-2025-04-20" }, function(status, body)
+          deckBridge.claudeUsageBusy = false
+          if status == 200 then
+            local ok, doc = pcall(hs.json.decode, body or "")
+            deckBridge.claudeUsage = ok and core.claudeUsageOf(doc) or nil
+            deckBridge.claudeUsageError = nil
+            if not deckBridge.claudeUsage then deckBridge.claudeUsageError = "usage: unexpected answer" end
+          else
+            deckBridge.claudeUsageError = "usage HTTP " .. tostring(status)
+          end
+          trail("claude usage: " .. (deckBridge.claudeUsageError or string.format("5h %s%% · week %s%%",
+            tostring(deckBridge.claudeUsage.session), tostring(deckBridge.claudeUsage.week))))
+        end)
+    end)
+  end)
+end
+
 --- GET /api/mac: what the knob's Clock and Mac remote show. CPU is measured between two calls (the relay polls
 --- every 2 s), so the first answer has none.
 local function macStatus()
@@ -520,12 +578,45 @@ local function macStatus()
   out.cpu = core.cpuPercent(deckBridge.cpuTicks, current)
   deckBridge.cpuTicks = current
   out.playing = deckBridge.nowPlaying
+  out.claude = deckBridge.claudeUsage
+  out.claudeError = deckBridge.claudeUsageError
+  local seconds = hs.timer.secondsSinceEpoch()
+  if seconds - (deckBridge.claudeUsageAt or 0) >= CLAUDE_USAGE_SECONDS then
+    deckBridge.claudeUsageAt = seconds
+    refreshClaudeUsage()
+  end
   local now = hs.timer.secondsSinceEpoch()
   if now - (deckBridge.nowPlayingAt or 0) >= 5 then
     deckBridge.nowPlayingAt = now
     askNowPlaying()
   end
   return out
+end
+
+-- cmd "jog": keys for each mode, { forward, back } (forward = a positive value).
+local JOG_KEYS = {
+  undo = { { mods = { "cmd", "shift" }, key = "z" }, { mods = { "cmd" }, key = "z" } },
+  tab = { { mods = { "ctrl" }, key = "tab" }, { mods = { "ctrl", "shift" }, key = "tab" } },
+  zoom = { { mods = { "cmd" }, key = "=" }, { mods = { "cmd" }, key = "-" } },
+  frame = { { mods = {}, key = "right" }, { mods = {}, key = "left" } },
+}
+
+--- The knob's Jog Wheel: the crown acts on whatever app is in front (not Orca), like the keyboard would.
+local function jogCommand(message)
+  local problem = core.jogProblem(message)
+  if problem then return problem end
+  if message.reset then
+    hs.eventtap.keyStroke({ "cmd" }, "0", 0)
+    return nil
+  end
+  local value = tonumber(message.value)
+  if message.mode == "scroll" then
+    hs.eventtap.event.newScrollEvent({ 0, -value * 3 }, {}, "line"):post()  -- 3 lines a detent, down for +
+    return nil
+  end
+  local chord = JOG_KEYS[message.mode][value > 0 and 1 or 2]
+  for _ = 1, math.abs(value) do hs.eventtap.keyStroke(chord.mods, chord.key, 0) end
+  return nil
 end
 
 local MEDIA_KEYS = { play = "PLAY", next = "NEXT", prev = "PREVIOUS" }
@@ -585,6 +676,8 @@ local function run(message, via)
     return ack(cmd, press({ mods = {}, key = "return" }))
   elseif cmd == "mac" then
     return ack(cmd, macCommand(message))
+  elseif cmd == "jog" then
+    return ack(cmd, jogCommand(message))
   end
   return ack(tostring(cmd), "unknown command")
 end

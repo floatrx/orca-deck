@@ -561,6 +561,28 @@ static void deck_swipe(lv_dir_t dir)
   }
 }
 
+static String duration(int minutes)
+{
+  if (minutes >= 1440) return String(minutes / 1440) + "d " + String(minutes % 1440 / 60) + "h";
+  if (minutes >= 60) return String(minutes / 60) + "h " + String(minutes % 60) + "m";
+  return String(minutes) + "m";
+}
+
+String claude_limits(bool with_reset)
+{
+  if (!shared_mux) return "";
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  MacStatus mac = shared.mac;
+  xSemaphoreGive(shared_mux);
+  String out;
+  if (mac.claude_session >= 0) out = "5h " + String(mac.claude_session) + "%";
+  if (mac.claude_week >= 0) {
+    out += String(out.length() ? " · " : "") + "wk " + String(mac.claude_week) + "%";
+    if (with_reset && mac.week_reset_min >= 0) out += " · " + duration(mac.week_reset_min);
+  }
+  return out;
+}
+
 static String deck_subtitle()
 {
   int attention = 0, working = 0, done = 0;
@@ -571,10 +593,12 @@ static String deck_subtitle()
       else if (a.bucket == "done") done++;
     }
   }
-  if (attention) return String(attention) + " needs you";
-  if (working) return String(working) + " working";
-  if (done) return String(done) + " done";
-  return all_worktrees.empty() ? "no workspaces" : "all quiet";
+  String state = attention ? String(attention) + " needs you"
+                 : working ? String(working) + " working"
+                 : done    ? String(done) + " done"
+                           : String(all_worktrees.empty() ? "no workspaces" : "all quiet");
+  String limits = claude_limits(false);  // the plan limits next to the state (user, 2026-11-14)
+  return limits.length() ? state + " · " + limits : state;
 }
 
 static void deck_show()
@@ -592,7 +616,7 @@ static void deck_hide()
   if (commit_at) commit();  // a crown choice still resting goes to Orca, as it would have
 }
 
-const App app_deck = {"orca-deck", LV_SYMBOL_LIST, C_ATTENTION, deck_show, deck_hide, deck_subtitle,
+const App app_deck = {"Claude", LV_SYMBOL_LIST, C_ATTENTION, deck_show, deck_hide, deck_subtitle,
                       deck_turn, deck_tap, deck_hold, deck_swipe};
 
 // ---- test channel: "T …" lines over USB drive the UI as the hands would (like Apex's DebugLaunch) ----
@@ -652,6 +676,7 @@ static void run_test(const String &line)
   }
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "dictate") Serial.println(dictate_report());
+  else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
     if (a) banner_show(worktrees[index_shown].id, a->id, ui_title(worktrees[index_shown]), "attention");
@@ -697,6 +722,7 @@ static void loop_tick(lv_timer_t *)
   timer_tick();
   clock_tick();
   mac_tick();
+  jog_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -771,6 +797,7 @@ extern "C" void ui_init(void)
   timer_create();
   clock_create();
   mac_create();
+  jog_create();
   dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it

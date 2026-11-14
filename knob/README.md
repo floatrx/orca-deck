@@ -17,14 +17,17 @@ fallbacks.
 ## Hub and apps
 
 The knob boots into the **hub**, a watchOS-style list of apps: the crown moves the list, a tap opens the app,
-**swipe down in any app goes back to the hub**. Apps: orca-deck, Timer, Mac, Clock, Settings (`hub.cpp` holds the list; a new app is
+**swipe down in any app goes back to the hub**. Apps: **Claude** (orca-deck — its badge is Clawd on black, acting out the loudest agent state; its row reads
+"2 done · 5h 34% · wk 79%"), Timer, Mac, Jog, Clock, Settings (`hub.cpp` holds the list; a new app is
 an `App` in `deck.h` plus one line). Plan: `.work/plans/knob-hub.md` (local).
 
 Behind the list a dotted Earth turns, edge to edge (`globe.cpp`; land mask from Natural Earth via
 `knob/tools/earth_mask.py`). After 12 s without input in the hub
 or Settings, **Clawd** (the Claude Code banner's pixel creature, `buddy.cpp`) takes the screen as the screensaver and
-acts the loudest state out (idle, working, needs you, done, asleep without a link); a tap, the crown or a swipe goes
-back to the hub. Never over orca-deck: that page is the one glanced at.
+acts the loudest state out (idle, working, needs you, done, asleep without a link), with Claude's plan limits round
+the rim (outer arc: the week, orange past 80 %; inner: the 5 h window) and "wk 79% · 1d 1h" under him; a tap, the
+crown or a swipe goes back to the hub. The limits come from the bridge (`/api/mac` → `claude`), the same
+`api.anthropic.com/api/oauth/usage` Orca's status bar uses. Never over orca-deck: that page is the one glanced at.
 
 The link status line shows only when something is wrong (offline, a failed or dropped command); "bridge online"
 stays hidden. A tap that ends a swipe is not a tap: LVGL sends a click on release even after a gesture.
@@ -47,6 +50,11 @@ streams while you speak (IMA ADPCM, 8 KB/s over BLE), so the text is back ~1 s a
 **Microphone** (spike): PDM, clock GPIO45 / data GPIO46, on I2S0 (sound plays on I2S1). `T mic <s>` records into
 PSRAM, prints dBFS per 100 ms and streams the samples as `MIC <base64>` lines; a quiet room reads −42…−54 dBFS,
 DC offset ~1500 (subtract it).
+
+**Jog**: the crown as a precise wheel for the Mac's front app — swipe left / right picks the mode (Scroll, Undo
+scrub ⌘Z / ⇧⌘Z, Tabs ⌃Tab, Zoom ⌘= / ⌘−, Frame ← / →), the crown acts, a tap resets the count (Zoom: ⌘0). A ruler
+round the rim turns one tick per detent; the centre counts ("+5 redos", "-14 undos"). Steps go in one `jog`
+command every 80 ms. **It acts on whatever app is in front** — test it with Scroll only.
 
 **Boot**: the Earth turns with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades
 in from the centre. **Settings → Screensaver**: off / 5 / 10 / 15 (default) / 20 / 25 / 30 s / 1 min.
@@ -118,7 +126,7 @@ uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "s
 ```
 
 Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `alert` (the banner for the agent on
-screen) · `tap banner` · `dictate` (the dictation screen's state, level and text) · `hold` then `tap` (start, then done) · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
+screen) · `tap banner` · `dictate` (the dictation screen's state, level and text) · `subtitle` (the Claude row and the limits) · `hold` then `tap` (start, then done) · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
 DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.

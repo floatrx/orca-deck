@@ -10,7 +10,8 @@ Lines on the wire (one JSON object per line, UTF-8):
                                            "now" (also in S) sets the knob's clock: Wi-Fi NTP is off on BLE
   relay → knob   D {...AgentDetail...}     the agent the knob's agent page shows (protocol.md § AgentDetail)
   relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
-  relay → knob   M {volume, muted, output, source, title, battery, charging, cpu, tz}   the Mac (GET /api/mac) for Clock and the Mac
+  relay → knob   M {volume, muted, output, source, title, battery, charging, cpu, tz, cs, cw, csr, cwr}
+                                           cs / cw: Claude 5 h / week limit %; csr / cwr: minutes to their reset   the Mac (GET /api/mac) for Clock and the Mac
                                            remote, plus tz (the Mac's UTC offset, minutes); every MAC_S, on change
   relay → knob   X {"text"} | {"error"}    the transcript of a dictation (V lines)
   knob → relay   V {"start":true} · V <base64 IMA-ADPCM, 16 kHz mono> · V {"end":true} | {"cancel":true}
@@ -79,6 +80,17 @@ STEPS = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41
          6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
          32767]
 INDEX_SHIFT = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+
+
+def until_minutes(iso):
+    """Minutes from now until an ISO time ("2026-11-15T18:00:00.14+00:00"); None when there is none."""
+    if not iso:
+        return None
+    try:
+        from datetime import datetime, timezone
+        return max(0, int((datetime.fromisoformat(iso.replace("Z", "+00:00")) - datetime.now(timezone.utc)).total_seconds() // 60))
+    except ValueError:
+        return None
 
 
 def adpcm_to_wav(data):
@@ -361,6 +373,14 @@ def main():
                 playing = mac.get("playing") or {}
                 payload["source"] = playing.get("source", "")
                 payload["title"] = (playing.get("title") or "")[:100]
+                claude = mac.get("claude") or {}
+                for key, field in (("session", "cs"), ("week", "cw")):  # Claude plan limits, %
+                    if claude.get(key) is not None:
+                        payload[field] = claude[key]
+                for key, field, unit in (("sessionResets", "csr", 60), ("weekResets", "cwr", 60)):  # minutes left
+                    left = until_minutes(claude.get(key))
+                    if left is not None:
+                        payload[field] = left
                 payload["tz"] = time.localtime().tm_gmtoff // 60  # the knob keeps UTC; its Clock shows the Mac's time
                 mac_line = encode("M", payload)
             except Exception as error:  # an older bridge without /api/mac: the knob's Clock shows the time only
