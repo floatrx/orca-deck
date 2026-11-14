@@ -38,6 +38,16 @@ void settings_load()
   prefs.end();
 }
 
+static void save();
+
+// Control Center's Brightness tile: the same 40 → 100 % steps as the Settings row, saved.
+void settings_step_brightness()
+{
+  settings.brightness = settings.brightness >= 100 ? 40 : settings.brightness + 20;
+  settings_apply();
+  save();
+}
+
 static void save()
 {
   prefs.begin("deck", false);

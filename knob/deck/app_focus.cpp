@@ -76,6 +76,7 @@ static void turn_off(bool by_timer)
 }
 
 static void tap() { on ? turn_off(false) : turn_on(); }
+void focus_toggle() { tap(); }  // Control Center's Focus tile
 
 // Every frame: the ring and time while shown; Focus ends with the Pomodoro.
 void focus_tick()

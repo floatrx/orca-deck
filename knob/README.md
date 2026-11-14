@@ -45,6 +45,9 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   needs you, done, asleep without a link — with the plan limits round the rim (outer: the week, orange past 80 %;
   inner: 5 h) and "wk 80% · 1d 0h" under him. Any touch goes back to the hub. Never over Claude, Clock or the apps
   that are glanced at.
+- **Control Center**: swipe up in the hub or any app but Claude (there it is the next agent) — a sheet slides up
+  with four tiles: Mic (mute), Focus, Sound (the Mac's mute), Brightness (40 → 100 %); Claude's limits on top, the
+  Mac's battery and CPU below. Crown + tap, or a tap on a tile; swipe down closes it.
 - **Every gesture vibrates**: the hub ticks for a gesture its app left silent. A silent knob is first Settings →
   Haptics = off (one tap from 3).
 - The status line shows only problems (offline, a failed or dropped command). Fonts carry `→` but no `←` / `↓`:
@@ -56,7 +59,8 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 - **Dictation** (Claude, hold on an agent): speak freely; a round **equalizer** (64 bars, mirrored, magenta → blue
   → cyan) follows the voice; **tap when done** — the relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in
   `~/.config/orca-deck/openai.key`, mode 600, never in the repo) and the text **goes to the agent at once**, shown as
-  SENT for 1.2 s. A swipe while listening cancels — the only way not to send. Audio streams as IMA ADPCM (8 KB/s)
+  SENT: the transcript types itself in, a green ring closes round it (SENDING → SENT), then the text rises away
+  (~2.8 s; a tap skips it). A swipe while listening cancels — the only way not to send. Audio streams as IMA ADPCM (8 KB/s)
   while you speak, so the text is back ~1 s after the tap. The transcript never goes to a log.
 - **Prompts** — a barrel drum: the prompt in front is bold in a band, its neighbours roll away above and below. The
   target is the agent on screen in Claude (a hold steps through the other chat agents); after a send it shows SENT
@@ -157,6 +161,7 @@ Verbs:
 | `select <worktree id>\|<agent id>` | the Claude page's choice, without `go` |
 | `alert` · `tap banner` | the banner for the agent on screen / a tap on it |
 | `dictate` · `subtitle` | the dictation screen's state / the Claude row and the limits |
+| `bloom` · `fly [text]` · `dictdemo [text]` | Claude's done bloom / a sent text flying / the dictation's send play-out — nothing is sent |
 | `ptarget <id part>` | pin Prompts to the chat agent whose id has it — no match sends nowhere (scratch-session tests) |
 | `saver off\|on\|now` | keep the screensaver out of a test (until the next reboot) / show it |
 | `haptics [level]` | the level and the DRV2605 writes / set the level (saved) |

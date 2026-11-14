@@ -138,6 +138,7 @@ static void open_app(int i)
 
 void hub_home()
 {
+  cc_close(true);  // the sheet never stays under the hub, catching its input
   if (current) {
     current->hide();
     current = nullptr;
@@ -171,6 +172,7 @@ static bool wake()
 void hub_turn(int step)
 {
   if (wake()) return;
+  if (cc_is_open()) return cc_turn(step);
   if (current) {
     if (current->turn) current->turn(step);
     return;
@@ -185,6 +187,7 @@ void hub_turn(int step)
 static void tap()
 {
   if (wake()) return;
+  if (cc_is_open()) return cc_tap();
   if (banner_take()) return;
   if (!current) return open_app(focus);
   if (current->tap) current->tap();
@@ -193,12 +196,21 @@ static void tap()
 static void hold()
 {
   if (wake()) return;
+  if (cc_is_open()) return;
   if (current && current->hold) current->hold();
 }
 
 static void swipe(lv_dir_t dir)
 {
   if (wake()) return;
+  if (cc_is_open()) {  // the sheet goes back down; nothing else reaches the app under it
+    if (dir == LV_DIR_BOTTOM) cc_close();
+    return;
+  }
+  if (dir == LV_DIR_TOP && current != &app_deck) {  // Claude keeps its own swipe up: the next agent
+    cc_open();
+    return;
+  }
   if (dir == LV_DIR_BOTTOM) {
     if (current) {
       haptic_home();
@@ -304,6 +316,7 @@ void hub_tick()
 String hub_report()
 {
   if (buddy_is_shown()) return buddy_report();
+  if (cc_is_open()) return cc_report();
   if (current == &app_timer) return "Timer " + timer_report();
   if (current == &app_clock) return "Clock " + clock_report();
   if (current == &app_mac) return "Mac " + mac_report();

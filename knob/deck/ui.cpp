@@ -858,6 +858,7 @@ static void run_test(const String &line)
   }
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "dictate") Serial.println(dictate_report());
+  else if (verb == "dictdemo") dictate_demo(arg.length() ? arg : "Перевіряємо роботу шайби без вайфаю.");
   else if (verb == "bloom") bloom_start();  // tests: a done's bloom and tick on the main page
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
@@ -917,6 +918,7 @@ static void loop_tick(lv_timer_t *)
   prompts_tick();
   micmute_tick();
   prs_tick();
+  cc_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -1035,7 +1037,8 @@ extern "C" void ui_init(void)
   prs_create();
   dictate_create();
   banner_create();
-  hub_create();  // the hub covers the apps, and the knob boots into it
+  hub_create();
+  cc_create();  // over the hub and the apps; the screensaver still covers it  // the hub covers the apps, and the knob boots into it
   buddy_create();  // last: the screensaver covers everything
 
   sound_init();

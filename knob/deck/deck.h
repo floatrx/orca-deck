@@ -296,6 +296,20 @@ void micmute_create();
 void micmute_tick();
 String micmute_report();
 
+// cc.cpp — Control Center: swipe up (not in Claude), swipe down closes
+void cc_create();
+void cc_open();
+void cc_close(bool quiet = false);  // quiet: the hub goes home itself (its own haptic)
+bool cc_is_open();
+void cc_turn(int step);
+void cc_tap();
+void cc_tick();
+String cc_report();
+bool mic_is_muted();    // app_mic.cpp
+void mic_toggle();
+void focus_toggle();    // app_focus.cpp
+void settings_step_brightness();  // settings.cpp
+
 // app_prs.cpp
 void prs_create();
 void prs_tick();
@@ -334,6 +348,7 @@ void dictate_create();
 void dictate_begin(const String &title, const String &agent);
 void dictate_tick();
 void dictate_tap();
+void dictate_demo(const String &text);  // tests: the result's play-out, nothing sent
 void dictate_swipe();
 void dictate_close();
 bool dictate_is_open();

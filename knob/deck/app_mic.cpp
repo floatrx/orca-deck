@@ -127,6 +127,15 @@ static void tap()
   paint();
 }
 
+bool mic_is_muted() { return known && muted; }
+
+// Control Center's Mic tile: the same toggle as a tap here, from the Mac's latest state.
+void mic_toggle()
+{
+  take_mac();
+  tap();
+}
+
 static void hold()
 {
   if (!known || holding) return;

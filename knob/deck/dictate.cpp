@@ -3,14 +3,24 @@
 // `enter`). The relay has the audio transcribed (OpenAI gpt-4o-transcribe) and the text goes to the agent at once
 // (`say`) — no confirming tap («після транскрибації … автоматично відправляти промт»); the screen shows it as SENT
 // for a moment. A swipe while listening cancels: the only way to not send.
+// The send plays out (user, 2026-11-14: «показувати трішки довше розпізнаний текст і з якоюсь анімацією … відправляти»):
+// the transcript types itself in, a green ring closes round it (SENDING → SENT), then the text rises off the
+// screen and Claude takes over. ~2.8 s; a tap skips to the end.
 // .work/notes/knob-dictation.md
 #include "deck.h"
 #include <math.h>
 
 #define TRANSCRIBE_WAIT_MS 30000
+#define TYPE_MS_PER_CHAR 28   // the typewriter, up to TYPE_MAX_MS for a long text
+#define TYPE_MAX_MS 1100
+#define SWEEP_MS 900          // the ring closing
+#define HOLD_MS 450           // SENT, whole
+#define RISE_MS 420           // the text rising away
 
 enum Stage { CLOSED, RECORDING, TRANSCRIBING, RESULT, FAILED };
 
+static lv_obj_t *sweep;  // the green ring that closes while the text is sent
+static uint32_t type_ms = 0;
 static lv_obj_t *page, *ring, *spinner, *title_label, *state_label, *time_label, *text_label, *hint_label;
 // The equalizer while listening (user, 2026-11-14: the factory firmware's spectrum look, but round): 64 bars radiate
 // round the rim, mirrored left / right — low frequencies at the top, high ones meeting at the bottom — magenta →
@@ -42,7 +52,20 @@ static void show_stage(Stage next)
   set_text(state_label, rec ? "LISTENING" : wait ? "TRANSCRIBING" : done ? "SENT" : failed ? "NOT SENT" : "");
   lv_obj_set_style_text_color(state_label, lv_color_hex(rec ? C_ATTENTION : done ? C_DONE : failed ? C_ATTENTION : C_WORKING), 0);
   set_text(hint_label, rec ? "tap when done · swipe: cancel" : failed ? "tap: close" : "");
-  if (done) set_text(text_label, text);
+  if (done) {  // the result plays out in dictate_tick
+    set_text(text_label, "");
+    set_text(state_label, "SENDING");
+    lv_obj_set_style_text_color(state_label, lv_color_hex(C_WORKING), 0);
+    lv_obj_set_style_translate_y(text_label, 0, 0);
+    lv_obj_set_style_opa(text_label, LV_OPA_COVER, 0);
+    lv_arc_set_value(sweep, 0);
+    lv_obj_clear_flag(sweep, LV_OBJ_FLAG_HIDDEN);
+    int chars = 0;
+    for (size_t i = 0; i < text.length(); i++) chars += ((uint8_t)text[i] & 0xC0) != 0x80;
+    type_ms = min((uint32_t)TYPE_MAX_MS, (uint32_t)chars * TYPE_MS_PER_CHAR);
+  } else if (sweep) {
+    lv_obj_add_flag(sweep, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 bool dictate_is_open() { return stage != CLOSED; }
@@ -157,11 +180,59 @@ void dictate_tick()
     } else if (millis() - sent_at > TRANSCRIBE_WAIT_MS) {
       fail("no answer from the Mac");
     }
-  } else if (stage == RESULT && millis() - sent_at > 1200) {  // SENT shown long enough: back, as after Send
-    String agent = agent_id;
-    dictate_close();
-    ui_after_send(agent, text);
+  } else if (stage == RESULT) {
+    uint32_t t = millis() - sent_at;
+    // 1. the transcript types itself in, a UTF-8 character at a time
+    if (t <= type_ms + 33) {
+      int chars = type_ms ? (int)(t * 1.0f / type_ms * 10000) : 10000, total = 0, cut = text.length();
+      for (size_t i = 0; i < text.length(); i++) total += ((uint8_t)text[i] & 0xC0) != 0x80;
+      int want = total * min(chars, 10000) / 10000, seen = 0;
+      for (size_t i = 0; i < text.length(); i++) {
+        if (((uint8_t)text[i] & 0xC0) != 0x80 && seen++ == want) {
+          cut = i;
+          break;
+        }
+      }
+      set_text(text_label, text.substring(0, cut));
+    }
+    // 2. the ring closes round it; full: SENT, a click
+    uint32_t s0 = type_ms;
+    if (t >= s0 && t < s0 + SWEEP_MS + 50) {
+      float f = fminf(1.0f, (t - s0) / (float)SWEEP_MS);
+      lv_arc_set_value(sweep, (int)(1000 * (1 - (1 - f) * (1 - f))));  // ease out
+      if (f >= 1.0f && strcmp(lv_label_get_text(state_label), "SENT")) {
+        set_text(state_label, "SENT");
+        lv_obj_set_style_text_color(state_label, lv_color_hex(C_DONE), 0);
+        haptic_click();
+      }
+    }
+    // 3. held a moment, then the text rises away and fades with the ring
+    uint32_t r0 = s0 + SWEEP_MS + HOLD_MS;
+    if (t >= r0) {
+      float f = fminf(1.0f, (t - r0) / (float)RISE_MS);
+      lv_obj_set_style_translate_y(text_label, -(int)(90 * f * f), 0);
+      lv_obj_set_style_opa(text_label, (lv_opa_t)(255 * (1 - f)), 0);
+      lv_obj_set_style_arc_opa(sweep, (lv_opa_t)(255 * (1 - f)), LV_PART_INDICATOR);
+    }
+    if (t >= r0 + RISE_MS) {  // gone: back, as after Send (the text already flew: none for the main page)
+      lv_obj_set_style_arc_opa(sweep, LV_OPA_COVER, LV_PART_INDICATOR);
+      String agent = agent_id;
+      dictate_close();
+      ui_after_send(agent);
+    }
   }
+}
+
+// Tests: the result's play-out with `t` as the transcript — nothing is sent (no agent, no `say`).
+void dictate_demo(const String &t)
+{
+  agent_id = "";
+  text = t;
+  set_text(title_label, "demo");
+  lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(page);
+  show_stage(RESULT);
+  sent_at = millis();
 }
 
 void dictate_tap()
@@ -171,7 +242,7 @@ void dictate_tap()
     sent_at = millis();
     haptic_click();
     show_stage(TRANSCRIBING);
-  } else if (stage == RESULT) {  // already sent: a tap just goes back sooner
+  } else if (stage == RESULT) {  // already sent: a tap just goes back sooner (the text flies off the main page)
     String agent = agent_id;
     dictate_close();
     ui_after_send(agent, text);
@@ -231,6 +302,21 @@ void dictate_create()
   lv_obj_clear_flag(spinner, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_style_arc_color(spinner, lv_color_hex(C_WORKING), LV_PART_INDICATOR);
   lv_obj_set_style_arc_color(spinner, lv_color_hex(0x1C1D21), LV_PART_MAIN);
+
+  sweep = lv_arc_create(page);  // the send's ring, round the transcript
+  lv_obj_set_size(sweep, 330, 330);
+  lv_obj_center(sweep);
+  lv_arc_set_rotation(sweep, 270);
+  lv_arc_set_bg_angles(sweep, 0, 360);
+  lv_arc_set_range(sweep, 0, 1000);
+  lv_obj_remove_style(sweep, NULL, LV_PART_KNOB);
+  lv_obj_clear_flag(sweep, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_arc_width(sweep, 6, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(sweep, lv_color_hex(0x15161A), LV_PART_MAIN);
+  lv_obj_set_style_arc_width(sweep, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(sweep, true, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(sweep, lv_color_hex(C_DONE), LV_PART_INDICATOR);
+  lv_obj_add_flag(sweep, LV_OBJ_FLAG_HIDDEN);
 
   state_label = make_label(page, &deck_bold_16, C_ATTENTION, -120, 220);
   lv_obj_set_style_text_letter_space(state_label, 2, 0);
