@@ -227,7 +227,8 @@ void mic_test(int seconds);
 bool dictation_start();          // records while the finger is held; false when the mic is busy
 void dictation_stop(bool send);  // send: the relay transcribes; else it drops the audio
 bool dictation_recording();
-int dictation_level();           // the last 100 ms, dBFS
+int dictation_level();           // the last block, dBFS
+void dictation_bands(float *out);  // 32 bands, 0…1, low → high: the equalizer
 
 // dictate.cpp — orca-deck's hold-to-dictate screen
 void dictate_create();

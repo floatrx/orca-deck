@@ -229,7 +229,7 @@ void handle_line(const String &line, LinkKind via)
 void push_voice(const String &line)
 {
   xSemaphoreTake(shared_mux, portMAX_DELAY);
-  if (shared.voice.size() < 200) shared.voice.push_back(line);  // 20 s of audio waiting: the link is gone anyway
+  if (shared.voice.size() < 600) shared.voice.push_back(line);  // 19 s of audio waiting: the link is gone anyway
   xSemaphoreGive(shared_mux);
 }
 

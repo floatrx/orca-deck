@@ -12,6 +12,15 @@
 enum Stage { CLOSED, RECORDING, TRANSCRIBING, RESULT, FAILED };
 
 static lv_obj_t *page, *ring, *spinner, *title_label, *state_label, *time_label, *text_label, *hint_label;
+// The equalizer while listening (user, 2026-11-14: the factory firmware's spectrum look, but round): 64 bars radiate
+// round the rim, mirrored left / right — low frequencies at the top, high ones meeting at the bottom — magenta →
+// blue → cyan, white tips; they fall back slowly. In silence: a thin ring.
+#define EQ_BARS 64
+#define EQ_R0 120   // where the bars start
+#define EQ_LEN 54   // the longest bar
+static lv_obj_t *eq;
+static lv_color_t *eq_buf;
+static float eq_shown[EQ_BARS / 2];
 static Stage stage = CLOSED;
 static String agent_id, text;
 static uint32_t started_at = 0, sent_at = 0, seen_version = 0;
@@ -20,7 +29,13 @@ static void show_stage(Stage next)
 {
   stage = next;
   bool rec = next == RECORDING, wait = next == TRANSCRIBING, done = next == RESULT, failed = next == FAILED;
-  rec ? lv_obj_clear_flag(ring, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(ring, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(ring, LV_OBJ_FLAG_HIDDEN);  // the equalizer replaced it; kept for a build without PSRAM
+  if (eq) rec ? lv_obj_clear_flag(eq, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(eq, LV_OBJ_FLAG_HIDDEN);
+  // Inside the ring of bars while listening; the usual places otherwise.
+  lv_obj_align(state_label, LV_ALIGN_CENTER, 0, rec ? -62 : -120);
+  lv_obj_align(title_label, LV_ALIGN_CENTER, 0, rec ? -38 : -94);
+  lv_obj_align(hint_label, LV_ALIGN_CENTER, 0, rec ? 56 : 120);
+  if (rec) memset(eq_shown, 0, sizeof(eq_shown));
   wait ? lv_obj_clear_flag(spinner, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
   rec ? lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
   done || failed ? lv_obj_clear_flag(text_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(text_label, LV_OBJ_FLAG_HIDDEN);
@@ -66,6 +81,45 @@ void dictate_begin(const String &title, const String &agent)
   show_stage(RECORDING);
 }
 
+static lv_color_t eq_color(float x)  // x 0…1 along the gradient: magenta → blue → cyan
+{
+  const uint32_t stops[3] = {0xE040FB, 0x5B6CFF, 0x3DE0E0};
+  int i = x < 0.5f ? 0 : 1;
+  float t = (x - i * 0.5f) * 2;
+  return lv_color_mix(lv_color_hex(stops[i + 1]), lv_color_hex(stops[i]), (lv_opa_t)(t * 255));
+}
+
+static inline void eq_dot(int x, int y, lv_color_t c)  // a 3 × 3 px brush
+{
+  for (int j = y - 1; j <= y + 1; j++) {
+    if (j < 0 || j >= 360) continue;
+    for (int i = x - 1; i <= x + 1; i++) {
+      if (i >= 0 && i < 360) eq_buf[j * 360 + i] = c;
+    }
+  }
+}
+
+static void draw_eq()
+{
+  static uint32_t last = 0;
+  if (!eq || millis() - last < 30) return;
+  last = millis();
+  float now[EQ_BARS / 2];
+  dictation_bands(now);
+  for (int b = 0; b < EQ_BARS / 2; b++) eq_shown[b] = fmaxf(now[b], eq_shown[b] * 0.82f);  // fast up, slow down
+  memset(eq_buf, 0, 360 * 360 * sizeof(lv_color_t));  // C_BG is black
+  lv_color_t white = lv_color_hex(0xFFFFFF);
+  for (int i = 0; i < EQ_BARS; i++) {
+    int band = i < EQ_BARS / 2 ? i : EQ_BARS - 1 - i;  // mirrored: both sides climb from the top to the bottom
+    float a = (i + 0.5f) * 2 * M_PI / EQ_BARS - M_PI / 2;
+    float ca = cosf(a), sa = sinf(a);
+    int len = 2 + (int)(eq_shown[band] * EQ_LEN);
+    lv_color_t c = eq_color((float)band / (EQ_BARS / 2 - 1));
+    for (int r = 0; r < len; r++) eq_dot(180 + (EQ_R0 + r) * ca, 180 + (EQ_R0 + r) * sa, r >= len - 3 && len > 6 ? white : c);
+  }
+  lv_obj_invalidate(eq);
+}
+
 void dictate_tick()
 {
   if (stage == RECORDING) {
@@ -75,11 +129,7 @@ void dictate_tick()
       show_stage(TRANSCRIBING);
       return;
     }
-    // The ring breathes with the voice: −60 dBFS (silence) … −10 dBFS (loud).
-    int db = dictation_level();
-    float v = fmaxf(0, fminf(1, (db + 60) / 50.0f));
-    lv_obj_set_style_arc_width(ring, 4 + (int)(v * 14), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ring, (lv_opa_t)(90 + v * 165), LV_PART_MAIN);
+    draw_eq();
     char t[12];
     snprintf(t, sizeof(t), "%u:%02u", (unsigned)(held / 60000), (unsigned)(held / 1000 % 60));
     set_text(time_label, t);
@@ -160,6 +210,16 @@ void dictate_create()
   lv_obj_remove_style(ring, NULL, LV_PART_INDICATOR);
   lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_style_arc_color(ring, lv_color_hex(C_ATTENTION), LV_PART_MAIN);
+
+  eq_buf = (lv_color_t *)ps_malloc(360 * 360 * sizeof(lv_color_t));
+  if (eq_buf) {
+    memset(eq_buf, 0, 360 * 360 * sizeof(lv_color_t));
+    eq = lv_canvas_create(page);
+    lv_canvas_set_buffer(eq, eq_buf, 360, 360, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_center(eq);
+    lv_obj_clear_flag(eq, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(eq, LV_OBJ_FLAG_HIDDEN);
+  }
 
   spinner = lv_spinner_create(page, 1100, 70);
   lv_obj_set_size(spinner, 90, 90);

@@ -5,6 +5,7 @@
 //   - the spike, `T mic <seconds>`: PSRAM recording, dBFS per 100 ms, the samples as `MIC <base64>` lines.
 #include "deck.h"
 #include <math.h>
+#include <utility>
 #include "driver/i2s_pdm.h"
 #include "mbedtls/base64.h"
 
@@ -13,7 +14,8 @@
 #define RATE 16000
 #define MAX_SECONDS 30
 
-#define BLOCK 1600        // 100 ms
+#define BLOCK 512         // 32 ms: one FFT and one V line each, ~31 a second (the equalizer moves at that rate)
+#define BANDS 32
 #define GAIN 8            // +18 dB: speech at 20–30 cm reads −40 dBFS raw
 #define DICTATE_MAX_S 60
 
@@ -120,6 +122,53 @@ void mic_test(int seconds)
 static volatile bool dictating = false;
 static volatile bool send_on_stop = false;  // how the task ends the stream after its last block: end or cancel
 static volatile int level_db = -90;  // the last block's RMS, dBFS (after gain): the UI's meter
+static volatile float bands[BANDS];  // the last block's spectrum, 0…1 per band, low → high (the equalizer)
+
+// A plain radix-2 FFT, in place: 512 points every 32 ms is ~5k butterflies, nothing for the S3.
+static void fft(float *re, float *im, int n)
+{
+  for (int i = 1, j = 0; i < n; i++) {
+    int bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) std::swap(re[i], re[j]), std::swap(im[i], im[j]);
+  }
+  for (int len = 2; len <= n; len <<= 1) {
+    float a = -2 * M_PI / len, wr = cosf(a), wi = sinf(a);
+    for (int i = 0; i < n; i += len) {
+      float cr = 1, ci = 0;
+      for (int k = 0; k < len / 2; k++) {
+        float *ur = &re[i + k], *ui = &im[i + k], *vr = &re[i + k + len / 2], *vi = &im[i + k + len / 2];
+        float tr = *vr * cr - *vi * ci, ti = *vr * ci + *vi * cr;
+        *vr = *ur - tr, *vi = *ui - ti;
+        *ur += tr, *ui += ti;
+        float nr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr, cr = nr;
+      }
+    }
+  }
+}
+
+// 32 log-spaced bands from ~90 Hz to ~7.5 kHz (speech lives there), each mapped −62…−12 dB → 0…1.
+static void spectrum(const int16_t *pcm)
+{
+  static float re[BLOCK], im[BLOCK], window[BLOCK];
+  static bool ready = false;
+  if (!ready) {
+    for (int i = 0; i < BLOCK; i++) window[i] = 0.5f - 0.5f * cosf(2 * M_PI * i / (BLOCK - 1));  // Hann
+    ready = true;
+  }
+  for (int i = 0; i < BLOCK; i++) re[i] = pcm[i] * window[i] / 32768.0f, im[i] = 0;
+  fft(re, im, BLOCK);
+  const float lo = 3, hi = 240;  // FFT bins (31.25 Hz each)
+  for (int b = 0; b < BANDS; b++) {
+    int from = (int)(lo * powf(hi / lo, (float)b / BANDS)), to = max(from + 1, (int)(lo * powf(hi / lo, (float)(b + 1) / BANDS)));
+    float peak = 0;
+    for (int k = from; k < to; k++) peak = fmaxf(peak, sqrtf(re[k] * re[k] + im[k] * im[k]));
+    float db = 20 * log10f(peak / (BLOCK / 4) + 1e-9f);
+    bands[b] = fmaxf(0, fminf(1, (db + 62) / 50));
+  }
+}
 static TaskHandle_t dictate_handle = nullptr;
 
 // IMA ADPCM (the classic DVI table): 16-bit samples → 4-bit codes, two per byte, low nibble first.
@@ -183,6 +232,9 @@ static void dictate_task(void *)
       }
       packed[i / 2] = (uint8_t)(s[0] | (s[1] << 4));
     }
+    static int16_t clean[BLOCK];  // the cleaned block, for the spectrum
+    for (int i = 0; i < BLOCK; i++) clean[i] = (int16_t)max(-32768, min(32767, (int)((block[i] - dc) * GAIN)));
+    spectrum(clean);
     double rms = sqrt(acc / BLOCK);
     level_db = rms > 0 ? (int)lround(20 * log10(rms / 32768)) : -90;
     size_t out = 0;
@@ -220,3 +272,8 @@ void dictation_stop(bool send)
 bool dictation_recording() { return dictate_handle != nullptr; }
 
 int dictation_level() { return level_db; }
+
+void dictation_bands(float *out)
+{
+  for (int b = 0; b < BANDS; b++) out[b] = dictating ? bands[b] : 0;
+}
