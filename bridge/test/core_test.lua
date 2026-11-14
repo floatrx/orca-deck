@@ -550,4 +550,14 @@ test("questionOf: every question for the group, groupAnswerable only when all ha
   eq(core.questionOf(raw).questions, nil); eq(core.questionOf(raw).groupAnswerable, false)
 end)
 
+test("wifiOf: WPA rules, no duplicates, at most 8", function()
+  local out = core.wifiOf({ { ssid = "home", pass = "12345678" }, { ssid = "home", pass = "other123" },
+    { ssid = "open" }, { ssid = "short", pass = "1234" }, { ssid = string.rep("x", 33), pass = "12345678" }, 5 })
+  eq(#out, 2); eq(out[1].ssid, "home"); eq(out[1].pass, "12345678"); eq(out[2].ssid, "open"); eq(out[2].pass, "")
+  local many = {}
+  for i = 1, 12 do many[i] = { ssid = "n" .. i, pass = "12345678" } end
+  eq(#core.wifiOf(many), core.WIFI_MAX)
+  eq(#core.wifiOf(nil), 0)
+end)
+
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))

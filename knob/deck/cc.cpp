@@ -3,7 +3,7 @@
 //   tiles: Mic (mute) · Focus (Mac Focus + Pomodoro) · Sound · Brightness
 //   crown: the tile · tap: the tile under the finger (or the focused one) · top: Claude limits · bottom: the Mac
 // Sound and Brightness take the crown after a tap (user, 2026-11-14: «тапаю на звук … крутити шайбу … гучність»):
-// it sets the Mac's volume (±2 %) or the screen (±5 %, 10–100 %); a tap again, another tile or closing is done.
+// it sets the Mac's volume (±2 %) or the screen (±5 %, ±1 % under 10 %); a tap again, another tile or closing is done.
 // A hold on Sound mutes / unmutes the Mac.
 // It slides up from the bottom edge, as on the watch.
 #include "deck.h"

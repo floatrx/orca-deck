@@ -12,12 +12,15 @@ static int fails_in_row = 0;
 static volatile int wifi_reason = 0;
 static bool ever_joined = false;
 static int last_rssi = 0;
-static String ssid;
+static String ssid, pass;
+static std::vector<String> bridge_urls;
+static size_t url_at = 0;  // the bridge address in use; a failed poll moves to the next
 static bool radio_on = false;
 
 static void poll_failed(const String &why)
 {
   Serial.printf("wifi poll failed: %s\n", why.c_str());
+  if (bridge_urls.size() > 1) url_at = (url_at + 1) % bridge_urls.size();  // the Mac may have another address here
   if (++fails_in_row >= FAILS_TO_REPORT) set_status(false, why);
 }
 
@@ -46,25 +49,32 @@ static String band_twin(const String &name)
   return "";
 }
 
-static String pick_ssid()
+// The strongest network on the air that the store knows (by name or by its 2.4 GHz twin); none seen: the first stored.
+static void pick_network()
 {
-  String twin = band_twin(WIFI_SSID);
-  int n = WiFi.scanNetworks();
-  bool seen = false, twin_seen = false;
+  std::vector<WifiNet> known = wifi_store_list();
+  int n = WiFi.scanNetworks(), best_rssi = -1000;
+  ssid = known.empty() ? "" : known[0].ssid;
+  pass = known.empty() ? "" : known[0].pass;
   for (int i = 0; i < n; i++) {
-    if (WiFi.SSID(i) == WIFI_SSID) seen = true;
-    if (twin.length() && WiFi.SSID(i) == twin) twin_seen = true;
+    for (const WifiNet &k : known) {
+      String twin = band_twin(k.ssid);
+      if ((WiFi.SSID(i) == k.ssid || (twin.length() && WiFi.SSID(i) == twin)) && WiFi.RSSI(i) > best_rssi) {
+        best_rssi = WiFi.RSSI(i);
+        ssid = WiFi.SSID(i);
+        pass = k.pass;
+      }
+    }
   }
   WiFi.scanDelete();
-  Serial.printf("wifi: %d networks, configured %s, twin %s\n", n, seen ? "seen" : "not seen", twin_seen ? "seen" : "not seen");
-  return seen || !twin_seen ? String(WIFI_SSID) : twin;
+  Serial.printf("wifi: %d on the air, %d known, joining %s (%d dBm)\n", n, (int)known.size(), ssid.c_str(), best_rssi);
 }
 
 static HTTPClient *open_request(HTTPClient &http, const String &path, int timeout)
 {
   http.useHTTP10(true);  // no chunked encoding: the body length is known up front
   http.setTimeout(timeout);
-  http.begin(String(BRIDGE_URL) + path);
+  http.begin((bridge_urls.empty() ? String(BRIDGE_URL) : bridge_urls[url_at % bridge_urls.size()]) + path);
   http.addHeader("Authorization", String("Bearer ") + BRIDGE_TOKEN);
   return &http;
 }
@@ -142,8 +152,10 @@ static void radio(bool on)
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);  // modem power-save drops the link on a weak 2.4 GHz signal
     WiFi.setAutoReconnect(true);
-    ssid = pick_ssid();
-    WiFi.begin(ssid.c_str(), WIFI_PASS);
+    pick_network();
+    bridge_urls = wifi_store_urls();
+    url_at = 0;
+    WiFi.begin(ssid.c_str(), pass.c_str());
   } else {
     Serial.println("wifi: off");
     WiFi.disconnect(true);
@@ -165,7 +177,7 @@ static void wifi_task(void *)
   for (;;) {
     bool relay = link_alive(LINK_BLE) || link_alive(LINK_USB);
     if (relay) relay_last = millis();
-    bool wanted = settings.wifi && strlen(WIFI_PASS) && !relay && millis() - relay_last > FALLBACK_AFTER_MS;
+    bool wanted = settings.wifi && !wifi_store_list().empty() && !relay && millis() - relay_last > FALLBACK_AFTER_MS;
     radio(wanted);
     if (!wanted) {
       joined = false;
@@ -182,10 +194,11 @@ static void wifi_task(void *)
       if (millis() - lost_at > 20000) {
         WiFi.disconnect();
         vTaskDelay(pdMS_TO_TICKS(200));
-        WiFi.begin(ssid.c_str(), WIFI_PASS);
+        pick_network();  // maybe another known network is in reach now
+        WiFi.begin(ssid.c_str(), pass.c_str());
         lost_at = millis();
       }
-      set_status(false, wifi_problem() + (ssid != WIFI_SSID ? " · " + ssid : ""));
+      set_status(false, wifi_problem() + " · " + ssid);
       joined = false;
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;

@@ -18,6 +18,8 @@ Lines on the wire (one JSON object per line, UTF-8):
   relay → knob   X {"text"} | {"error"}    the transcript of a dictation (V lines)
   relay → knob   Y {now, wa, wo, r:[[name, [[from, to, 0|1], …]], …]}   today's Agent Day Timeline (GET /api/day):
                                            minutes of the day; 0 working, 1 needs you; every DAY_S, on change
+  relay → knob   W {n:[[ssid, pass], …], lan:[url, …]}   the knob's Wi-Fi networks and the bridge's LAN URLs
+                                           (GET /api/wifi, localhost only); every WIFI_S, on change; never logged
   relay → knob   P {g:[[name, [prompt, …]], …]}   the Prompt Palette (GET /api/prompts); every PROMPTS_S, on change
   relay → knob   R {e, l, p:[[key, title, checks, mine, review, rerun], …]}   PR Radar (GET /api/prs): checks
                                            ok|fail|run|none, review approved|changes|""; e: the bridge's gh error,
@@ -62,6 +64,7 @@ FULL_STATE_S = 30.0  # a full S even without a change, in case a line was lost
 TEXT_CHARS = 100
 MESSAGE_CHARS = 1200
 MAC_S = 2.0
+WIFI_S = 60.0  # GET /api/wifi: networks change rarely; the LAN URLs follow the Mac between places
 PROMPTS_S = 30.0  # GET /api/prompts: the file is read on every call, so an edit shows up within this
 PRS_S = 30.0  # GET /api/prs: the bridge asks GitHub every 60 s
 DAY_S = 60.0  # GET /api/day: the timeline moves a minute at a time  # GET /api/mac: CPU is measured between two calls, so not much faster
@@ -359,6 +362,7 @@ def main():
     mac_line, mac_at = None, 0.0
     day_line, day_at = None, -DAY_S
     prompts_line, prompts_at = None, -PROMPTS_S
+    wifi_line, wifi_at = None, -WIFI_S
     prs_line, prs_at = None, -PRS_S
     while True:
         if args.stdio and not links[0].alive:
@@ -420,6 +424,16 @@ def main():
             except Exception as error:  # an older bridge: no timeline
                 log(f"day: {error}")
                 day_line = None
+        if links and time.time() - wifi_at >= WIFI_S:
+            wifi_at = time.time()
+            try:
+                wifi = bridge("GET", "/api/wifi")
+                nets = wifi.get("networks") if isinstance(wifi.get("networks"), list) else []
+                lan = wifi.get("lan") if isinstance(wifi.get("lan"), list) else []
+                wifi_line = encode("W", {"n": [[n["ssid"], n.get("pass", "")] for n in nets[:8]], "lan": lan[:4]})
+            except Exception as error:  # an older bridge: the knob keeps what it has
+                log(f"wifi: {type(error).__name__}")  # never the body: it carries passwords
+                wifi_line = None
         if links and time.time() - prompts_at >= PROMPTS_S:
             prompts_at = time.time()
             try:
@@ -440,7 +454,7 @@ def main():
                 prs_line = None
         for link in list(links):
             try:
-                link.tick(state_line, (mac_line, day_line, prompts_line, prs_line))
+                link.tick(state_line, (mac_line, day_line, prompts_line, prs_line, wifi_line))
             except Exception as error:  # a write failed: the cable is out
                 log(f"{link.name}: {error}")
                 link.alive = False

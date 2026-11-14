@@ -41,11 +41,18 @@ void settings_load()
 static void save();
 static bool editing = false;  // the Brightness row is taking the crown
 
-// Brightness in 5 % steps from 10 % (user, 2026-11-14: «більше градацій»; it was 40 / 60 / 80 / 100). The crown sets
+// Brightness in 5 % steps (1 % under 10 %) (user, 2026-11-14: «більше градацій»; it was 40 / 60 / 80 / 100). The crown sets
 // it, live; the caller saves once when the editing ends (one NVS write, not one a detent).
+// Below 10 % it goes a percent at a time, down to 1 % (user, 2026-11-15: «від десяти … 9, 8, 7 … 1»): the dark end
+// is where a step is felt.
 void settings_adjust_brightness(int step)
 {
-  int next = max(BRIGHT_MIN, min(100, (int)settings.brightness + step * BRIGHT_STEP));
+  int now = settings.brightness, next = now;
+  for (int i = 0; i < abs(step); i++) {
+    bool fine = step > 0 ? next < 10 : next <= 10;
+    next += (step > 0 ? 1 : -1) * (fine ? 1 : BRIGHT_STEP);
+  }
+  next = max(BRIGHT_MIN, min(100, next));
   if (next == settings.brightness) return;
   settings.brightness = next;
   settings_apply();

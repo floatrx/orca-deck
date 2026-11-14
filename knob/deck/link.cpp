@@ -247,10 +247,22 @@ static void apply_prs(const String &body)
   xSemaphoreGive(shared_mux);
 }
 
+static void apply_wifi(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  std::vector<WifiNet> nets;
+  for (JsonArray n : doc["n"].as<JsonArray>()) nets.push_back({n[0] | "", n[1] | "", true});
+  std::vector<String> lan;
+  for (JsonVariant v : doc["lan"].as<JsonArray>()) lan.push_back(v.as<String>());
+  wifi_store_set_mac(nets, lan);
+}
+
 static void apply_transcript(const String &body);
 static void apply_day(const String &body);
 static void apply_prompts(const String &body);
 static void apply_prs(const String &body);
+static void apply_wifi(const String &body);
 
 void handle_line(const String &line, LinkKind via)
 {
@@ -279,6 +291,8 @@ void handle_line(const String &line, LinkKind via)
     apply_prompts(body);
   } else if (kind == 'R') {
     apply_prs(body);
+  } else if (kind == 'W' && via != LINK_WIFI) {  // the networks ride only BLE / USB, never the air they configure
+    apply_wifi(body);
   } else if (kind == 'T' && via == LINK_USB) {
     ui_test_enqueue(body);  // test input over the cable only: it needs physical access
   } else if (kind == 'A') {

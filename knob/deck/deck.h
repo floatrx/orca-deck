@@ -158,6 +158,22 @@ uint32_t link_seen_at(LinkKind kind);
 void link_seen(LinkKind kind);
 bool link_alive(LinkKind kind);
 
+// wifi_store.cpp — the Wi-Fi networks in NVS (no reflash per place)
+#define WIFI_MAX 8
+struct WifiNet {
+  String ssid, pass;
+  bool from_mac = false;  // from the Mac's wifi.json (replaced as a set), else typed on the knob
+};
+void wifi_store_load();     // at boot
+void wifi_store_persist();  // LVGL task only: writes NVS when something changed
+std::vector<WifiNet> wifi_store_list();  // + secrets.h's network as the seed
+int wifi_store_count();
+std::vector<String> wifi_store_urls();   // the bridge's LAN URLs, learnt first, BRIDGE_URL last
+void wifi_store_set_mac(const std::vector<WifiNet> &mac, const std::vector<String> &lan);
+void wifi_store_add(const String &ssid, const String &pass);
+void wifi_store_forget(const String &ssid);
+String wifi_store_report();  // never a password
+
 // link_serial.cpp / link_ble.cpp / link_wifi.cpp
 void serial_link_start();
 void serial_send_line(const String &line);
@@ -255,7 +271,7 @@ String buddy_report();
 String claude_mood();
 String claude_limits(bool with_reset);  // "5h 34% · wk 79%" (+ " · 1d 2h" to the week's reset); "" when unknown  // the loudest agent state: attention / working / done / idle; sleep without a link
 void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const String &mood, uint32_t now, bool bang_ok,
-                lv_color_t bg);
+                lv_color_t bg, bool floor_shadow = false);
 
 // app_timer.cpp
 void timer_create();
@@ -309,10 +325,10 @@ String cc_report();
 bool mic_is_muted();    // app_mic.cpp
 void mic_toggle();
 void focus_toggle();    // app_focus.cpp
-void settings_adjust_brightness(int step);  // settings.cpp: ±5 % a step, 10–100, live (not saved)
+void settings_adjust_brightness(int step);  // settings.cpp: ±5 % a step, ±1 % under 10, 1–100, live (not saved)
 void settings_save();
 String settings_report();
-#define BRIGHT_MIN 10
+#define BRIGHT_MIN 1
 #define BRIGHT_STEP 5
 
 // app_prs.cpp

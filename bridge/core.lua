@@ -612,6 +612,23 @@ function core.prProblem(message, prs)
   return "unknown PR"
 end
 
+--- The knob's Wi-Fi networks from a decoded ~/.config/orca-deck/wifi.json: [{ssid, pass}], at most 8, WPA rules
+--- (an SSID of 1–32 bytes; a password of 8–63, or none for an open network). Bad entries are dropped.
+core.WIFI_MAX = 8
+function core.wifiOf(doc)
+  local out, seen = {}, {}
+  for _, n in ipairs(type(doc) == "table" and doc or {}) do
+    if #out >= core.WIFI_MAX then break end
+    local ssid, pass = type(n) == "table" and n.ssid, type(n) == "table" and (n.pass or "")
+    if type(ssid) == "string" and #ssid >= 1 and #ssid <= 32 and type(pass) == "string"
+        and (#pass == 0 or (#pass >= 8 and #pass <= 63)) and not seen[ssid] then
+      seen[ssid] = true
+      out[#out + 1] = { ssid = ssid, pass = pass }
+    end
+  end
+  return out
+end
+
 --- The agent with `id` and its worktree, or nil.
 function core.agentById(worktrees, id)
   for _, worktree in ipairs(worktrees) do

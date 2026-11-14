@@ -41,10 +41,11 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 - **Banner**: an agent turns needs-you or done while Claude is not on screen → a pill at the top for 3 s and a buzz;
   a tap on it opens Claude on that agent. Apps use it too (the Timer's end, Focus off).
 - **Screensaver**: after Settings → Screensaver (off / 5 … 30 s / 1 min, default 15 s) without input in the hub or
-  Settings, **Clawd** (the Claude Code banner's pixel creature) acts out the loudest agent state — idle, working,
-  needs you, done, asleep without a link — with the plan limits round the rim (outer: the week, orange past 80 %;
-  inner: 5 h) and "wk 80% · 1d 0h" under him. Any touch goes back to the hub. Never over Claude, Clock or the apps
-  that are glanced at.
+  Settings, **Clawd** (the Claude Code banner's pixel creature, with a light gradient and a floor shadow) acts out
+  the loudest agent state — idle, working, needs you, done, asleep without a link. Round him: the week's limit on
+  the left half of the rim and the 5 h window on the right (both fill from the bottom; orange past 80 %, red past
+  95 %), their % and reset at the bottom; three counts (needs you · working · done); the Mac's time, battery and
+  CPU. Any touch goes back to the hub. Never over Claude, Clock or the apps that are glanced at.
 - **Control Center**: swipe up in the hub or any app but Claude (there it is the next agent) — a sheet slides up
   with four tiles: Mic (mute), Focus, Sound, Brightness; Claude's limits on top, the Mac's battery and CPU below.
   Crown + tap, or a tap on a tile; swipe down closes it. A tap on Sound or Brightness gives it the crown (the
@@ -163,6 +164,8 @@ Verbs:
 | `select <worktree id>\|<agent id>` | the Claude page's choice, without `go` |
 | `alert` · `tap banner` | the banner for the agent on screen / a tap on it |
 | `dictate` · `subtitle` | the dictation screen's state / the Claude row and the limits |
+| `shot` | a screenshot (RGB565 over USB): `uv run knob/test/shot.py out.png "wait 10" "open Clock" …` writes a PNG |
+| `wifi` | the stored Wi-Fi networks (SSIDs and password lengths only) |
 | `bloom` · `fly [text]` · `dictdemo [text]` | Claude's done bloom / a sent text flying / the dictation's send play-out — nothing is sent |
 | `ptarget <id part>` | pin Prompts to the chat agent whose id has it — no match sends nowhere (scratch-session tests) |
 | `saver off\|on\|now` | keep the screensaver out of a test (until the next reboot) / show it |

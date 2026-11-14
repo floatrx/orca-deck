@@ -8,6 +8,7 @@
 #include <time.h>
 #include "bidi_switch_knob.h"
 #include "sound.h"
+#include "mbedtls/base64.h"
 
 #define KNOB_PIN_A 8
 #define KNOB_PIN_B 7
@@ -803,6 +804,29 @@ const App app_deck = {"Claude", LV_SYMBOL_LIST, C_ATTENTION, deck_show, deck_hid
 
 // ---- test channel: "T …" lines over USB drive the UI as the hands would (like Apex's DebugLaunch) ----
 
+// "T shot": the screen as RGB565 (big-endian: LV_COLOR_16_SWAP), base64 in SHOTD lines between SHOT and SHOT END —
+// knob/test/shot.py turns it into a PNG. The top layer (a flying text) is not in it.
+static void screenshot()
+{
+  lv_img_dsc_t *snap = lv_snapshot_take(lv_scr_act(), LV_IMG_CF_TRUE_COLOR);
+  if (!snap) {
+    Serial.println("SHOT failed: no memory");
+    return;
+  }
+  Serial.printf("SHOT %d %d\n", (int)snap->header.w, (int)snap->header.h);
+  const size_t CHUNK = 3000;  // raw bytes a line
+  static unsigned char out[4100];
+  for (size_t at = 0; at < snap->data_size; at += CHUNK) {
+    size_t n = min(CHUNK, (size_t)snap->data_size - at), written = 0;
+    mbedtls_base64_encode(out, sizeof(out), &written, snap->data + at, n);
+    out[written] = 0;
+    Serial.print("SHOTD ");
+    Serial.println((const char *)out);
+  }
+  Serial.println("SHOT END");
+  lv_snapshot_free(snap);
+}
+
 static SemaphoreHandle_t test_mux;
 static std::vector<String> test_queue;
 
@@ -861,6 +885,8 @@ static void run_test(const String &line)
   else if (verb == "dictdemo") dictate_demo(arg.length() ? arg : "Перевіряємо роботу шайби без вайфаю.");
   else if (verb == "bloom") bloom_start();  // tests: a done's bloom and tick on the main page
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
+  else if (verb == "wifi") Serial.println(wifi_store_report());
+  else if (verb == "shot") screenshot();
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
@@ -921,6 +947,7 @@ static void loop_tick(lv_timer_t *)
   cc_tick();
   dictate_tick();
   tz_persist();
+  wifi_store_persist();
   hub_tick();
   banner_tick();
   motion(now);
@@ -949,6 +976,7 @@ extern "C" void ui_init(void)
   if (!shared_mux) shared_mux = xSemaphoreCreateMutex();
   settings_load();  // applied in setup(), after the backlight PWM exists
   tz_load();
+  wifi_store_load();
 
   lv_obj_t *screen = lv_scr_act();
   lv_obj_set_style_bg_color(screen, lv_color_hex(C_BG), 0);

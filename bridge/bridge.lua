@@ -891,8 +891,21 @@ local function onRemoteRequest(method, target, headers, body)
 end
 
 --- Port 7352, localhost only: /api/* and the mock page (the WebSocket is attached in serve()).
+-- The knob's Wi-Fi networks (.work/plans/knob-wifi.md): ~/.config/orca-deck/wifi.json, served on this localhost port
+-- only — it carries passwords, so never on 7353 (LAN, tunnel). The relay brings it to the knob over BLE.
+local WIFI_FILE = os.getenv("HOME") .. "/.config/orca-deck/wifi.json"
+
+local function wifiNetworks()
+  local ok, doc = pcall(hs.json.decode, readFile(WIFI_FILE) or "")
+  return core.wifiOf(ok and doc or nil)
+end
+
 local function onLocalRequest(method, target, headers, body)
   local route, query = core.parseTarget(target)
+  if method == "GET" and route == "/api/wifi" then
+    if not core.authorized(headers, deckBridge.config.token) then return json(401, { error = "unauthorized" }) end
+    return json(200, { v = core.PROTOCOL, networks = wifiNetworks(), lan = deckBridge.lanURLs })
+  end
   if route:sub(1, 5) == "/api/" then return onApi(method, route, query, headers, body) end
   if method ~= "GET" or (route ~= "/" and route ~= "/index.html") then return "not found", 404, {} end
   local file = io.open(DIR .. "index.html", "r")
