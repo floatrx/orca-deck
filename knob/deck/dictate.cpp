@@ -160,7 +160,7 @@ void dictate_tick()
   } else if (stage == RESULT && millis() - sent_at > 1200) {  // SENT shown long enough: back, as after Send
     String agent = agent_id;
     dictate_close();
-    ui_after_send(agent);
+    ui_after_send(agent, text);
   }
 }
 
@@ -174,7 +174,7 @@ void dictate_tap()
   } else if (stage == RESULT) {  // already sent: a tap just goes back sooner
     String agent = agent_id;
     dictate_close();
-    ui_after_send(agent);
+    ui_after_send(agent, text);
   } else if (stage == FAILED) {
     dictate_close();
   }

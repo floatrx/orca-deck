@@ -17,7 +17,7 @@
 #define DOUBLE_TAP_MS 260    // a tap waits this long to see whether it becomes a double tap
 
 #define MAX_DOTS 48
-#define RING_RADIUS 163
+#define RING_SIZE 330  // the workspaces' arcs, inside the halo (356) — one arc a workspace, as PR Radar
 
 // LVGL-task state.
 static std::vector<Worktree> all_worktrees, worktrees;  // the bridge's list, and the visible one
@@ -29,12 +29,23 @@ static std::map<String, String> picked_agent;  // worktree id → agent picked b
 static std::map<String, String> last_bucket;   // agent id → bucket, for the done / needs-you buzz
 static volatile int pending_steps = 0;
 
-static lv_obj_t *dots[MAX_DOTS];
+static lv_obj_t *dots[MAX_DOTS];  // arcs since 2026-11-14 (user: PR Radar's arcs look much nicer than dots)
+static bool dot_attention[MAX_DOTS];  // its lead agent needs you: the arc pulses
 static int dot_count = 0;
 static String dot_ids;
 static lv_obj_t *comet;
 static String motion_bucket;  // the bucket of the agent on screen, for the comet and the sonar
 static lv_obj_t *halo, *summary, *state_label, *name_label, *meta_label, *detail_label, *counter_label, *status_label;
+// Motion added 2026-11-14 (user: «анімації … щоб виглядало симпатичніше», all four picked):
+static float dial_pos = 0;          // the dial's turn, in workspaces: eases to index_shown, so the arcs slide
+static int dial_count = 0;
+#define AURA_DISCS 3
+static lv_obj_t *aura[AURA_DISCS];  // a soft glow in the state's colour behind the card, breathing
+static lv_color_t aura_from, aura_now;
+static uint32_t aura_target = C_IDLE, aura_since = 0;
+static lv_obj_t *bloom, *check;     // a done: a green ring blooms out and a tick draws itself
+static lv_point_t check_pts[3];
+static lv_obj_t *fly;               // a sent text flies up and away
 
 // ---- shared helpers ----
 
@@ -202,11 +213,14 @@ static void build_dots()
   int n = min((int)worktrees.size(), MAX_DOTS);
   for (int i = 0; i < MAX_DOTS; i++) {
     if (i < n && !dots[i]) {
-      dots[i] = lv_obj_create(lv_scr_act());
-      lv_obj_clear_flag(dots[i], (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
-      lv_obj_set_style_radius(dots[i], LV_RADIUS_CIRCLE, 0);
-      lv_obj_set_style_pad_all(dots[i], 0, 0);
-      lv_obj_move_background(dots[i]);
+      lv_obj_t *a = dots[i] = lv_arc_create(lv_scr_act());
+      lv_obj_set_size(a, RING_SIZE, RING_SIZE);
+      lv_obj_center(a);
+      lv_obj_remove_style(a, NULL, LV_PART_KNOB);
+      lv_obj_remove_style(a, NULL, LV_PART_INDICATOR);
+      lv_obj_clear_flag(a, LV_OBJ_FLAG_CLICKABLE);
+      lv_obj_set_style_arc_rounded(a, true, LV_PART_MAIN);
+      lv_obj_move_background(a);
     }
     if (dots[i]) {
       if (i < n) lv_obj_clear_flag(dots[i], LV_OBJ_FLAG_HIDDEN);
@@ -215,6 +229,26 @@ static void build_dots()
   }
   dot_count = n;
 }
+
+// The dial turns so the chosen workspace sits at 12 o'clock; dial_pos slides there (motion()).
+static void place_dots()
+{
+  // One arc a workspace, the chosen one centred at 12 o'clock; LVGL's 0° is 3 o'clock, clockwise.
+  float span = dot_count ? 360.0f / dot_count : 360;
+  int gap = dot_count > 1 ? 6 : 0;
+  for (int i = 0; i < dot_count; i++) {
+    if (dot_count == 1) {
+      lv_arc_set_bg_angles(dots[i], 0, 360);
+      continue;
+    }
+    float mid = 270 + (i - dial_pos) * span;
+    int start = ((int)lroundf(mid - span / 2 + gap / 2.0f) % 360 + 360) % 360;
+    int end = ((int)lroundf(mid + span / 2 - gap / 2.0f) % 360 + 360) % 360;
+    lv_arc_set_bg_angles(dots[i], start, end);
+  }
+}
+
+static void bloom_start();
 
 static void render()
 {
@@ -234,24 +268,22 @@ static void render()
   set_text(summary, sum.length() ? sum : (n ? "ALL QUIET" : "NO WORKSPACES"));
 
   build_dots();
+  if (dial_count != dot_count) {  // a new list: no slide from a stale place
+    dial_count = dot_count;
+    dial_pos = index_shown;
+  }
   for (int i = 0; i < dot_count; i++) {
-    // The dial turns so the chosen workspace sits at 12 o'clock.
-    float angle = (float)(i - index_shown) / dot_count * 2 * M_PI - M_PI / 2;
     const Worktree &w = worktrees[i];
     const Agent *lead = lead_agent(w);
     String bucket = lead ? lead->bucket : "idle";
     bool sel = i == index_shown;
-    int size = sel ? 18 : 10;
-    lv_obj_set_size(dots[i], size, size);
-    lv_obj_set_pos(dots[i], 180 + RING_RADIUS * cosf(angle) - size / 2, 180 + RING_RADIUS * sinf(angle) - size / 2);
-    lv_color_t c = lv_color_hex(color_of(bucket));
-    lv_obj_set_style_bg_color(dots[i], c, 0);
-    lv_obj_set_style_bg_opa(dots[i], w.agents.empty() ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(dots[i], w.agents.empty() ? lv_color_hex(0x444444) : c, 0);
-    lv_obj_set_style_border_width(dots[i], 2, 0);
-    lv_obj_set_style_shadow_width(dots[i], sel ? 14 : 0, 0);
-    lv_obj_set_style_shadow_color(dots[i], c, 0);
+    bool empty = w.agents.empty();
+    lv_obj_set_style_arc_width(dots[i], sel ? 16 : empty ? 4 : 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(dots[i], empty ? lv_color_hex(0x444444) : lv_color_hex(color_of(bucket)), LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(dots[i], sel ? LV_OPA_COVER : LV_OPA_50, LV_PART_MAIN);
+    dot_attention[i] = bucket == "attention";
   }
+  place_dots();
 
   if (!n) {
     set_text(state_label, "");
@@ -269,6 +301,11 @@ static void render()
   lv_obj_set_style_arc_color(halo, c, LV_PART_MAIN);
   lv_obj_set_style_arc_color(comet, c, LV_PART_INDICATOR);
   motion_bucket = bucket;
+  if (color_of(bucket) != aura_target) {  // the glow cross-fades to the new state's colour
+    aura_from = aura_now;
+    aura_target = color_of(bucket);
+    aura_since = millis();
+  }
   lv_obj_set_style_text_color(state_label, c, 0);
   set_text(state_label, !a ? "NO AGENTS" : bucket == "attention" ? "NEEDS YOU" : upper(bucket));
   set_text(name_label, ui_title(w));
@@ -361,6 +398,10 @@ static void on_state(std::vector<Worktree> &list)
   if (i < 0) i = selected_id.length() ? min(index_shown, (int)worktrees.size() - 1) : index_of(active_id);
   select_index(i < 0 ? 0 : i);
   render();
+  if (fresh_done_agent.length() && hub_current() == &app_deck && !worktrees.empty()) {
+    const Agent *shown = shown_agent(worktrees[index_shown]);
+    if (shown && shown->id == fresh_done_agent) bloom_start();
+  }
   if (pulses) haptic_buzz(pulses);
   if (alert_a && hub_current() != &app_deck) banner_show(alert_w->id, alert_a->id, ui_title(*alert_w), alert_a->bucket);
 }
@@ -417,8 +458,34 @@ void ui_close_pages()
 
 // Apex: after a send or an answer, back to the main page, turned to the next waiting agent (no `go`:
 // the crown or a tap takes Orca there).
-void ui_after_send(const String &agent_id)
+static void fly_y(void *obj, int32_t v) { lv_obj_align((lv_obj_t *)obj, LV_ALIGN_CENTER, 0, v); }
+static void fly_opa(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, v, 0); }
+static void fly_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
+
+// The text just sent rises off the screen and fades, as a message leaving (over any page: the top layer).
+static void fly_away(const String &text)
 {
+  if (!fly || !text.length()) return;
+  set_text(fly, text);
+  lv_obj_set_style_opa(fly, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(fly, LV_OBJ_FLAG_HIDDEN);
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, fly);
+  lv_anim_set_values(&a, 24, -170);
+  lv_anim_set_time(&a, 700);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_in);
+  lv_anim_set_exec_cb(&a, fly_y);
+  lv_anim_start(&a);
+  lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+  lv_anim_set_exec_cb(&a, fly_opa);
+  lv_anim_set_ready_cb(&a, fly_done);
+  lv_anim_start(&a);
+}
+
+void ui_after_send(const String &agent_id, const String &sent)
+{
+  fly_away(sent);
   ui_close_pages();
   String agent;
   int i = next_waiting(index_shown, agent_id, agent);
@@ -468,6 +535,64 @@ void deck_open_agent(const String &worktree, const String &agent)
 
 // ---- motion (Apex: comet while working, sonar while it needs you, one calm swap per crown step) ----
 
+static void bloom_step(void *, int32_t v)  // 0…1000: the ring grows from the card out past the rim and fades
+{
+  int size = 110 + (360 - 110) * v / 1000;
+  lv_obj_set_size(bloom, size, size);
+  lv_obj_align(bloom, LV_ALIGN_CENTER, 0, -20 * (1000 - v) / 1000);
+  lv_obj_set_style_border_width(bloom, 1 + 7 * (1000 - v) / 1000, 0);
+  lv_obj_set_style_border_opa(bloom, (lv_opa_t)(255 * (1000 - v) / 1000), 0);
+}
+
+static void check_step(void *, int32_t v)  // 0…1000: the short stroke, then the long one
+{
+  const lv_point_t a = {2, 15}, b = {12, 25}, c = {32, 3};
+  check_pts[0] = a;
+  if (v < 350) {
+    check_pts[1] = {(lv_coord_t)(a.x + (b.x - a.x) * v / 350), (lv_coord_t)(a.y + (b.y - a.y) * v / 350)};
+    lv_line_set_points(check, check_pts, 2);
+  } else {
+    check_pts[1] = b;
+    check_pts[2] = {(lv_coord_t)(b.x + (c.x - b.x) * (v - 350) / 650), (lv_coord_t)(b.y + (c.y - b.y) * (v - 350) / 650)};
+    lv_line_set_points(check, check_pts, 3);
+  }
+}
+
+static void hide_when_done(lv_anim_t *a) { lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN); }
+static void check_opa(void *obj, int32_t v) { lv_obj_set_style_line_opa((lv_obj_t *)obj, v, 0); }
+
+static void bloom_start()
+{
+  lv_obj_clear_flag(bloom, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(check, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_style_line_opa(check, LV_OPA_COVER, 0);
+  lv_anim_t a;
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, bloom);
+  lv_anim_set_values(&a, 0, 1000);
+  lv_anim_set_time(&a, 900);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+  lv_anim_set_exec_cb(&a, bloom_step);
+  lv_anim_set_ready_cb(&a, hide_when_done);
+  lv_anim_start(&a);
+  lv_anim_init(&a);
+  lv_anim_set_var(&a, check);
+  lv_anim_set_values(&a, 0, 1000);
+  lv_anim_set_time(&a, 420);
+  lv_anim_set_delay(&a, 150);
+  lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+  lv_anim_set_exec_cb(&a, check_step);
+  lv_anim_start(&a);
+  lv_anim_init(&a);  // the tick stays a moment, then fades
+  lv_anim_set_var(&a, check);
+  lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+  lv_anim_set_time(&a, 400);
+  lv_anim_set_delay(&a, 1800);
+  lv_anim_set_exec_cb(&a, check_opa);
+  lv_anim_set_ready_cb(&a, hide_when_done);
+  lv_anim_start(&a);
+}
+
 static void fade_in(lv_obj_t *obj)
 {
   lv_anim_t a;
@@ -487,10 +612,43 @@ static void swap_card()
 // ~30 fps; everything stops while another page covers the main one.
 static void motion(uint32_t now)
 {
+  bool main_page = hub_current() == &app_deck && !settings_page_open() && !agent_page_is_open() && !dictate_is_open();
+  // The dots slide to the crown's choice every frame, the shortest way round, settling without overshoot.
+  static uint32_t last_slide = 0;
+  if (dot_count > 1) {
+    float delta = fmodf(index_shown - dial_pos, dot_count);
+    if (delta > dot_count / 2.0f) delta -= dot_count;
+    if (delta < -dot_count / 2.0f) delta += dot_count;
+    if (fabsf(delta) > 0.002f) {
+      float dt = min(0.05f, (now - last_slide) / 1000.0f);
+      dial_pos += fabsf(delta) < 0.004f ? delta : delta * fminf(1.0f, dt * 14);
+      dial_pos = fmodf(dial_pos + dot_count, dot_count);
+      if (main_page) place_dots();
+    }
+  }
+  last_slide = now;
+
+  // The aura, 15 fps, main page only (covered, it would make the page above redraw).
+  static uint32_t last_aura = 0;
+  if (main_page && now - last_aura >= 66) {
+    last_aura = now;
+    float t = fminf(1.0f, (now - aura_since) / 600.0f);
+    aura_now = lv_color_mix(lv_color_hex(aura_target), aura_from, (uint8_t)(255 * t));
+    float strength = motion_bucket == "attention" ? 1.0f : motion_bucket == "working" ? 0.8f : motion_bucket == "done" ? 0.6f : 0.25f;
+    float period = motion_bucket == "attention" ? 1600.0f : 4200.0f;
+    float breath = 0.7f + 0.3f * sinf(now / period * 2 * M_PI);
+    for (int k = 0; k < AURA_DISCS; k++) {
+      float drift = now / 9000.0f * 2 * M_PI + k * 2.1f;
+      int r = 6 + 3 * k;
+      lv_obj_align(aura[k], LV_ALIGN_CENTER, (int)(r * cosf(drift)), (int)(r * sinf(drift)) - 20);
+      lv_obj_set_style_bg_color(aura[k], aura_now, 0);
+      lv_obj_set_style_bg_opa(aura[k], (lv_opa_t)((10 + 6 * k) * strength * breath), 0);
+    }
+  }
+
   static uint32_t last = 0;
   if (now - last < 33) return;
   last = now;
-  bool main_page = hub_current() == &app_deck && !settings_page_open() && !agent_page_is_open() && !dictate_is_open();
   bool working = main_page && motion_bucket == "working";
   if (working) {
     lv_obj_clear_flag(comet, LV_OBJ_FLAG_HIDDEN);
@@ -505,6 +663,14 @@ static void motion(uint32_t now)
   } else {
     lv_obj_set_style_arc_opa(halo, LV_OPA_70, LV_PART_MAIN);
     lv_obj_set_style_arc_width(halo, 3, LV_PART_MAIN);
+  }
+  if (main_page) {  // a workspace that needs you breathes on its arc, as a running PR does on PR Radar's
+    float pulse = 0.5f + 0.5f * sinf(now / 1400.0f * 2 * M_PI);
+    for (int i = 0; i < dot_count; i++) {
+      if (!dot_attention[i]) continue;
+      lv_opa_t base = i == index_shown ? 150 : 60;
+      lv_obj_set_style_arc_opa(dots[i], (lv_opa_t)(base + (255 - base) * pulse), LV_PART_MAIN);
+    }
   }
 }
 
@@ -692,6 +858,8 @@ static void run_test(const String &line)
   }
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "dictate") Serial.println(dictate_report());
+  else if (verb == "bloom") bloom_start();  // tests: a done's bloom and tick on the main page
+  else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
@@ -784,6 +952,19 @@ extern "C" void ui_init(void)
   lv_obj_set_style_bg_color(screen, lv_color_hex(C_BG), 0);
   lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
+  // The aura: three soft discs, largest first, behind everything on the main page.
+  aura_from = aura_now = lv_color_hex(C_IDLE);
+  for (int k = 0; k < AURA_DISCS; k++) {
+    int size = 300 - 70 * k;
+    lv_obj_t *d = aura[k] = lv_obj_create(screen);
+    lv_obj_set_size(d, size, size);
+    lv_obj_align(d, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(d, 0, 0);
+    lv_obj_set_style_bg_opa(d, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(d, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+  }
+
   // The halo: a thin ring at the edge in the colour of the agent on screen.
   halo = lv_arc_create(screen);
   lv_obj_set_size(halo, 356, 356);
@@ -820,6 +1001,24 @@ extern "C" void ui_init(void)
   lv_obj_set_style_text_letter_space(summary, 1, 0);
   lv_obj_set_style_text_letter_space(state_label, 2, 0);
   set_text(name_label, "Claude");
+
+  bloom = lv_obj_create(screen);  // a done's ring, and its tick above the summary
+  lv_obj_set_style_radius(bloom, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_opa(bloom, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_color(bloom, lv_color_hex(C_DONE), 0);
+  lv_obj_clear_flag(bloom, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+  lv_obj_add_flag(bloom, LV_OBJ_FLAG_HIDDEN);
+  check = lv_line_create(screen);
+  lv_obj_set_size(check, 34, 28);
+  lv_obj_align(check, LV_ALIGN_CENTER, 0, -128);
+  lv_obj_set_style_line_width(check, 5, 0);
+  lv_obj_set_style_line_rounded(check, true, 0);
+  lv_obj_set_style_line_color(check, lv_color_hex(C_DONE), 0);
+  lv_obj_add_flag(check, LV_OBJ_FLAG_HIDDEN);
+
+  fly = make_label(lv_layer_top(), &deck_16, C_INK, 24, 250);
+  lv_label_set_long_mode(fly, LV_LABEL_LONG_WRAP);
+  lv_obj_add_flag(fly, LV_OBJ_FLAG_HIDDEN);
 
   settings_page_create();
   agent_page_create();

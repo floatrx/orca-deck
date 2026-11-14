@@ -21,7 +21,7 @@ static uint32_t seen_version = 0;
 static int group = 0, sel = 0, target_index = 0;
 static float pos = 0;  // the drum's angle, in rows; eases to `sel`
 static uint32_t last_frame = 0, sent_at = 0;
-static String target_agent, sent_agent;  // "" until a hold picks one: follows the Claude app
+static String target_agent, sent_agent, sent_text;  // "" until a hold picks one: follows the Claude app
 static bool strict = false;  // tests: target_agent or nothing — never a fallback to a real session
 
 static const PromptGroup *current()
@@ -146,6 +146,7 @@ static void tap()
   push_command(cmd);
   haptic_click(2);
   sent_agent = t.agent;
+  sent_text = g->prompts[sel];
   sent_at = millis();
   set_text(sent_label, "SENT " LV_SYMBOL_RIGHT " " + t.title);
   lv_obj_clear_flag(sent_label, LV_OBJ_FLAG_HIDDEN);
@@ -188,7 +189,7 @@ void prompts_tick()
     if (!strict) target_agent = "";
     lv_obj_add_flag(sent_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(band, lv_color_hex(0x15161A), 0);
-    ui_after_send(sent_agent);
+    ui_after_send(sent_agent, sent_text);
     paint_target();
   }
   static uint32_t last_target = 0;
@@ -230,7 +231,7 @@ static void hide()
     sent_at = 0;
     lv_obj_add_flag(sent_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(band, lv_color_hex(0x15161A), 0);
-    ui_after_send(sent_agent);
+    ui_after_send(sent_agent, sent_text);
   }
   if (!strict) target_agent = "";
 }

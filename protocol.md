@@ -212,6 +212,8 @@ Client loop:
     "text": "Which colour do you prefer?", "header": "Colour",      // header may be absent
     "options": [{ "id": "q1:choice-1", "label": "red" }],             // ≤ 6, labels ≤ 120 characters
     "answerable": true  // false: several questions, multi-select or free text only — answer it in Orca
+    // with several questions or multi-select also: "questions": [{id, text, header?, multiSelect, options}],
+    // "groupAnswerable": true when every question has options (the knob answers them with `answers`)
   },
   "send": { "at": 1792708619802, "ok": true, "note": "…" },  // the last say; absent before the first;
                                                             // ok absent while it is still sending
@@ -248,6 +250,9 @@ Client loop:
   the same envelope Orca's renderer builds, so Orca shows the question as answered and the agent continues.
 - Refused at once with a note: a missing or over-long id (> 1024), a revision that is not a positive integer,
   an unknown or terminal agent, Orca not running — and **over the WebSocket**, like `say`.
+- **A group** (several questions, multi-select): `answers: [{questionId, optionIds: […]}]`, one entry per question,
+  instead of `optionId`. `agent.cjs` turns it into the `question-group:` option Orca's renderer sends (JSON with `%`
+  escaped); Orca checks that every question is answered and only a multi-select one has several ids.
 - Orca refuses a stale `revision` (the question changed or was answered elsewhere): the outcome is
   `answer: {ok: false, note}` — read `AgentDetail` again.
 - The trail records `answer <session> → answered in <ms> ms | failed in <ms> ms: <reason>` — never the

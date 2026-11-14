@@ -528,4 +528,26 @@ test("prProblem: only PRs the radar knows; rerun needs a failed run", function()
   eq(core.commandRefusal("pr", "ws"), "pr needs the bearer token: use POST /api/cmd")
 end)
 
+test("answerProblem: a group of answers instead of one option", function()
+  local base = { id = "a", itemId = "i", revision = 1 }
+  local function with(answers) local m = { id = base.id, itemId = base.itemId, revision = base.revision, answers = answers } return m end
+  eq(core.answerProblem(with({ { questionId = "q1", optionIds = { "o1", "o2" } }, { questionId = "q2", optionIds = { "x" } } })), nil)
+  eq(core.answerProblem(with({})), "answers needs one entry per question")
+  eq(core.answerProblem(with({ { questionId = "q1", optionIds = {} } })), "each answer needs a question id and its option ids")
+  eq(core.answerProblem(with({ { optionIds = { "o" } } })), "each answer needs a question id and its option ids")
+end)
+
+test("questionOf: every question for the group, groupAnswerable only when all have options", function()
+  local raw = { itemId = "i", revision = 2, text = "A?", options = { { id = "a1", label = "x" } }, answerable = false,
+    groupAnswerable = true, questions = {
+      { id = "q1", text = "A?", multiSelect = true, options = { { id = "a1", label = "x" }, { id = "a2", label = "y" } } },
+      { id = "q2", text = "B?", options = { { id = "b1", label = "z" } } } } }
+  local q = core.questionOf(raw)
+  eq(#q.questions, 2); eq(q.questions[1].multiSelect, true); eq(#q.questions[1].options, 2); eq(q.groupAnswerable, true)
+  raw.questions[2].options = {}
+  eq(core.questionOf(raw).groupAnswerable, false)
+  raw.questions = nil
+  eq(core.questionOf(raw).questions, nil); eq(core.questionOf(raw).groupAnswerable, false)
+end)
+
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))

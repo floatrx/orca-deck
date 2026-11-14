@@ -2,6 +2,8 @@
 // recommendation, ticked from the start), one Send for the ticked ones, or the pending question's options.
 // Send and an answer go at once (no undo countdown); afterwards the knob goes back to the main page, turned to
 // the next waiting agent. No variants while the agent works — they belong to its previous turn.
+// A question with several questions or multi-select is answered a step at a time (user, 2026-11-14: «вибрати
+// запропоновані в Orca варіанти … безпосередньо через шайбу»): ticks per question, Next, then one Answer.
 #include "deck.h"
 #include <set>
 
@@ -10,7 +12,7 @@ static std::vector<lv_obj_t *> rows;  // focusable rows in body order
 static std::vector<int> row_kind;     // ROW_* below
 static std::vector<int> row_index;    // the variant / option index
 
-enum { ROW_VARIANT, ROW_SEND, ROW_OPTION };
+enum { ROW_VARIANT, ROW_SEND, ROW_OPTION, ROW_PICK, ROW_STEP };
 
 static String agent_id, agent_bucket;
 static AgentDetail page_detail;
@@ -19,6 +21,15 @@ static String signature;           // what the rows were built from: rebuild onl
 static std::set<String> ticked;    // ticked variants, by text: survive a refresh of the same list
 static int focus = -1;             // -1: the message
 static bool loaded = false;
+static int step = 0;                         // the question on screen, in a group
+static std::vector<std::set<String>> picks;  // per question: the option ids picked
+
+static bool group_mode()
+{
+  const AgentDetail &d = page_detail;
+  if (!d.has_question || !d.group_answerable || d.questions.empty()) return false;
+  return d.questions.size() > 1 || d.questions[0].multi;  // one single-select question keeps the one-tap rows
+}
 
 static String compose()
 {
@@ -44,8 +55,10 @@ static void paint()
   for (size_t i = 0; i < rows.size(); i++) {
     bool filled = row_kind[i] == ROW_VARIANT && ticked.count(page_detail.next[row_index[i]]);
     if (row_kind[i] == ROW_SEND) filled = compose().length() > 0;
+    if (row_kind[i] == ROW_PICK) filled = picks[step].count(page_detail.questions[step].options[row_index[i]].id);
+    if (row_kind[i] == ROW_STEP) filled = !picks[step].empty();
     style_row(rows[i], (int)i == focus, filled);
-    if (row_kind[i] == ROW_VARIANT) {
+    if (row_kind[i] == ROW_VARIANT || row_kind[i] == ROW_PICK) {
       lv_obj_t *mark = lv_obj_get_child(rows[i], 0);
       lv_label_set_text(mark, filled ? LV_SYMBOL_OK : "");
     }
@@ -61,10 +74,14 @@ static lv_obj_t *add_row(const String &text, int kind, int index)
   lv_obj_set_height(row, LV_SIZE_CONTENT);
   lv_obj_set_style_radius(row, 12, 0);
   lv_obj_set_style_border_width(row, 2, 0);
+  // Thumb-sized (user, 2026-11-14: Send was too low for a thumb): options ≥ 50 px, Send ≥ 60 px.
   lv_obj_set_style_pad_all(row, 8, 0);
-  lv_obj_set_style_pad_left(row, kind == ROW_VARIANT ? 28 : 10, 0);
+  bool button = kind == ROW_SEND || kind == ROW_STEP, ticks = kind == ROW_VARIANT || kind == ROW_PICK;
+  lv_obj_set_style_pad_ver(row, button ? 18 : 14, 0);
+  lv_obj_set_style_min_height(row, button ? 60 : 50, 0);
+  lv_obj_set_style_pad_left(row, ticks ? 28 : 10, 0);
   lv_obj_clear_flag(row, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
-  if (kind == ROW_VARIANT) {
+  if (ticks) {
     lv_obj_t *mark = lv_label_create(row);  // child 0: the tick
     lv_obj_set_style_text_font(mark, &lv_font_montserrat_20, 0);  // built-in: carries LV_SYMBOL_OK
     lv_obj_set_style_text_color(mark, lv_color_hex(C_DONE), 0);
@@ -72,11 +89,11 @@ static lv_obj_t *add_row(const String &text, int kind, int index)
     lv_label_set_text(mark, "");
   }
   lv_obj_t *label = lv_label_create(row);
-  lv_obj_set_width(label, kind == ROW_VARIANT ? 196 : 214);
+  lv_obj_set_width(label, ticks ? 196 : 214);
   lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-  lv_obj_set_style_text_font(label, kind == ROW_SEND ? &deck_bold_16 : &deck_14, 0);
-  lv_obj_set_style_text_color(label, lv_color_hex(kind == ROW_SEND ? C_DONE : C_INK), 0);
-  lv_obj_set_style_text_align(label, kind == ROW_SEND ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_set_style_text_font(label, button ? &deck_bold_16 : &deck_14, 0);
+  lv_obj_set_style_text_color(label, lv_color_hex(button ? C_DONE : C_INK), 0);
+  lv_obj_set_style_text_align(label, button ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT, 0);
   lv_label_set_text(label, text.c_str());
   rows.push_back(row);
   row_kind.push_back(kind);
@@ -120,13 +137,24 @@ static void rebuild()
   row_index.clear();
 
   String text;
-  if (!loaded) text = "loading…";
+  bool group = loaded && group_mode();
+  if (group) {
+    const Question &q = page_detail.questions[step];
+    String head = page_detail.questions.size() > 1 ? String(step + 1) + "/" + String(page_detail.questions.size()) : "";
+    if (q.header.length()) head += String(head.length() ? " · " : "") + q.header;
+    if (q.multi) head += String(head.length() ? " · " : "") + "pick any";
+    text = (head.length() ? head + "\n" : "") + q.text;
+  } else if (!loaded) text = "loading…";
   else if (page_detail.has_question) text = page_detail.question.length() ? page_detail.question : page_detail.message;
   else text = page_detail.message.length() ? page_detail.message : "(no message)";
   lv_label_set_text(message, text.c_str());
 
   bool working = agent_bucket == "working" || page_detail.bucket == "working";
-  if (loaded && page_detail.has_question) {
+  if (group) {
+    const Question &q = page_detail.questions[step];
+    for (size_t i = 0; i < q.options.size(); i++) add_row(q.options[i].label, ROW_PICK, i);
+    add_row(step + 1 < (int)page_detail.questions.size() ? "Next" : "Answer", ROW_STEP, 0);
+  } else if (loaded && page_detail.has_question) {
     if (page_detail.answerable) {
       for (size_t i = 0; i < page_detail.options.size(); i++) add_row(page_detail.options[i].label, ROW_OPTION, i);
     } else {
@@ -158,7 +186,13 @@ static void take_detail()
   for (const String &v : page_detail.next) sig += "|" + v;
   if (sig == signature) return;
   bool same_variants = signature.length() && page_detail.next.size() && ticked.size();
+  bool same_question = picks.size() == page_detail.questions.size() && signature.length() &&
+                       signature.indexOf("|" + page_detail.item_id + "|" + String(page_detail.revision)) >= 0;
   signature = sig;
+  if (!same_question) {  // a new question: start at its first step, nothing picked
+    step = 0;
+    picks.assign(page_detail.questions.size(), std::set<String>());
+  }
   if (!same_variants) {
     ticked.clear();
     if (!page_detail.next.empty()) ticked.insert(page_detail.next[0]);  // the recommendation, ticked from the start
@@ -187,6 +221,8 @@ void agent_page_open(const Worktree &w, const Agent &a)
   loaded = false;
   signature = "";
   ticked.clear();
+  picks.clear();
+  step = 0;
   set_text(title, ui_title(w));
   set_text(meta, ui_meta(w, &a));
   set_text(state, a.bucket == "attention" ? "NEEDS YOU" : a.bucket == "working" ? "WORKING" : a.bucket == "done" ? "DONE" : "IDLE");
@@ -250,7 +286,53 @@ void agent_page_tap()
     cmd["text"] = text;
     push_command(cmd);
     haptic_click(2);
-    ui_after_send(agent_id);
+    ui_after_send(agent_id, text);
+  } else if (kind == ROW_PICK) {
+    const Question &q = page_detail.questions[step];
+    const String &id = q.options[index].id;
+    if (q.multi) {
+      if (picks[step].count(id)) picks[step].erase(id);
+      else picks[step].insert(id);
+      haptic_click();
+      paint();
+      return;
+    }
+    picks[step] = {id};  // single-select: the pick, then straight on (to Answer on the last question)
+    haptic_click();
+    focus = rows.size() - 1;
+    paint();
+  } else if (kind == ROW_STEP) {
+    if (picks[step].empty()) {
+      haptic_buzz(1);
+      return;
+    }
+    if (step + 1 < (int)page_detail.questions.size()) {
+      step++;
+      haptic_click();
+      rebuild();
+      return;
+    }
+    JsonDocument cmd;  // every question answered: one answer for the group
+    cmd["cmd"] = "answer";
+    cmd["id"] = agent_id;
+    cmd["itemId"] = page_detail.item_id;
+    cmd["revision"] = page_detail.revision;
+    JsonArray answers = cmd["answers"].to<JsonArray>();
+    String said;
+    for (size_t k = 0; k < page_detail.questions.size(); k++) {
+      const Question &q = page_detail.questions[k];
+      JsonObject a = answers.add<JsonObject>();
+      a["questionId"] = q.id;
+      JsonArray ids = a["optionIds"].to<JsonArray>();
+      for (const QuestionOption &o : q.options) {  // in the options' order, not the tap order
+        if (!picks[k].count(o.id)) continue;
+        ids.add(o.id);
+        said += String(said.length() ? ", " : "") + o.label;
+      }
+    }
+    push_command(cmd);
+    haptic_click(2);
+    ui_after_send(agent_id, said);
   } else if (kind == ROW_OPTION && index >= 0) {
     JsonDocument cmd;
     cmd["cmd"] = "answer";
@@ -260,7 +342,7 @@ void agent_page_tap()
     cmd["optionId"] = page_detail.options[index].id;
     push_command(cmd);
     haptic_click(2);
-    ui_after_send(agent_id);
+    ui_after_send(agent_id, page_detail.options[index].label);
   }
 }
 
@@ -288,7 +370,7 @@ void agent_page_create()
   lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(body, 0, 0);
   lv_obj_set_style_pad_all(body, 0, 0);
-  lv_obj_set_style_pad_row(body, 8, 0);
+  lv_obj_set_style_pad_row(body, 10, 0);
   lv_obj_set_style_pad_bottom(body, 44, 0);  // the last line clears the round bottom edge (it clipped "Working…")
   lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

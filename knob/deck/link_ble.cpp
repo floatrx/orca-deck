@@ -138,6 +138,9 @@ void ble_link_start()
   rx_mux = xSemaphoreCreateMutex();
   NimBLEDevice::init(DEVICE_NAME);
   NimBLEDevice::setMTU(247);
+  // Full TX power (+9 dBm; the default is lower): away from the home desk the link timed out every few seconds
+  // ("connection has timed out unexpectedly", 2026-11-14 21:30–21:49) and a dictation never reached the relay.
+  NimBLEDevice::setPower(9);
   NimBLEDevice::setSecurityAuth(true, false, true);  // bonding, Just Works, LE Secure Connections
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
   server = NimBLEDevice::createServer();

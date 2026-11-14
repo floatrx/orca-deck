@@ -471,7 +471,8 @@ local function answer(message)
   if not hs.application.get(ORCA_BUNDLE) then return "Orca is not running" end
   local started = hs.timer.secondsSinceEpoch()
   deckBridge.answers[agent.id] = { at = math.floor(started * 1000), note = "answering" }
-  local input = hs.json.encode({ itemId = message.itemId, revision = math.floor(message.revision), optionId = message.optionId })
+  local input = hs.json.encode({ itemId = message.itemId, revision = math.floor(message.revision), optionId = message.optionId,
+    answers = message.answers })
   agentScript({ "answer", sessionId }, input, function(result, failure)
     local at = math.floor(hs.timer.secondsSinceEpoch() * 1000)
     local ms = math.floor((hs.timer.secondsSinceEpoch() - started) * 1000)

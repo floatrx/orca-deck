@@ -400,6 +400,7 @@ end
 --- Longest id Orca takes for an item or an option (AGENT_SESSION_RESPONSE_OPTION_ID_MAX_LENGTH).
 local ID_MAX = 1024
 core.QUESTION_OPTIONS_MAX = 6
+core.QUESTIONS_MAX = 4
 local QUESTION_TEXT_MAX = 1500
 local OPTION_LABEL_MAX = 120
 
@@ -414,6 +415,20 @@ function core.answerProblem(message)
   local revision = message.revision
   if type(revision) ~= "number" or revision < 1 or revision ~= math.floor(revision) then
     return "answer needs the question's revision"
+  end
+  if message.answers ~= nil then  -- several questions / multi-select: [{questionId, optionIds = {…}}]
+    if type(message.answers) ~= "table" or #message.answers == 0 or #message.answers > core.QUESTIONS_MAX then
+      return "answers needs one entry per question"
+    end
+    for _, a in ipairs(message.answers) do
+      if type(a) ~= "table" or not isId(a.questionId) or type(a.optionIds) ~= "table" or #a.optionIds == 0 then
+        return "each answer needs a question id and its option ids"
+      end
+      for _, id in ipairs(a.optionIds) do
+        if not isId(id) then return "each answer needs a question id and its option ids" end
+      end
+    end
+    return nil
   end
   if not isId(message.optionId) then return "answer needs an option id" end
   return nil
@@ -430,6 +445,24 @@ function core.questionOf(raw)
       options[#options + 1] = { id = option.id, label = core.clip(option.label, OPTION_LABEL_MAX) }
     end
   end
+  -- Every question of the item, for the knob to answer as a group (multi-select too).
+  local questions = {}
+  for _, q in ipairs(type(raw.questions) == "table" and raw.questions or {}) do
+    if #questions >= core.QUESTIONS_MAX or type(q) ~= "table" or not isId(q.id) then break end
+    local opts = {}
+    for _, option in ipairs(type(q.options) == "table" and q.options or {}) do
+      if #opts >= core.QUESTION_OPTIONS_MAX then break end
+      if type(option) == "table" and isId(option.id) then
+        opts[#opts + 1] = { id = option.id, label = core.clip(option.label, OPTION_LABEL_MAX) }
+      end
+    end
+    questions[#questions + 1] = { id = q.id, text = core.clip(q.text, 400), header = type(q.header) == "string" and core.clip(q.header, 40) or nil,
+      multiSelect = q.multiSelect == true, options = opts }
+  end
+  local groupAnswerable = raw.groupAnswerable == true and type(raw.questions) == "table" and #questions == #raw.questions
+  for _, q in ipairs(questions) do
+    if #q.options == 0 then groupAnswerable = false end
+  end
   return {
     itemId = raw.itemId,
     revision = raw.revision,
@@ -437,6 +470,8 @@ function core.questionOf(raw)
     header = type(raw.header) == "string" and core.clip(raw.header, 40) or nil,
     options = options,
     answerable = raw.answerable == true and #options > 0,
+    questions = #questions > 0 and questions or nil,
+    groupAnswerable = groupAnswerable,
   }
 end
 

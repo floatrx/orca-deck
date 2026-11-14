@@ -106,7 +106,8 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   small, the agent's last message. A comet runs round the rim while the agent works; the halo pulses while it
   needs you. Buzz + sound: 2 for needs-you, 1 for done.
 - **Agent page:** the full last message, the Next variants with ticks (the first one ticked, marked •), one Send
-  (`say`, several ticked go as a numbered list); a pending question shows its options and a tap answers it. While
+  (`say`, several ticked go as a numbered list); a pending question shows its options and a tap answers it. Several questions or a multi-select go a
+  step at a time — "1/2 · Fruit · pick any", ticks, Next, then one Answer for them all. While
   the agent works: no variants, a grey "Working…" with a spinner. After Send / an answer: back to the main page,
   turned to the next waiting agent.
 - **Claude settings** (NVS): Hide inactive, Hide completed (off / 1 h / 1 day).

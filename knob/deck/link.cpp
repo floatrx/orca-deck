@@ -110,6 +110,16 @@ bool apply_detail(const String &body)
     d.revision = q["revision"] | 0;
     d.question = q["text"] | "";
     for (JsonObject o : q["options"].as<JsonArray>()) d.options.push_back({o["id"] | "", o["label"] | ""});
+    d.group_answerable = q["groupAnswerable"] | false;
+    for (JsonObject qq : q["questions"].as<JsonArray>()) {
+      Question one;
+      one.id = qq["id"] | "";
+      one.text = qq["text"] | "";
+      one.header = qq["header"] | "";
+      one.multi = qq["multiSelect"] | false;
+      for (JsonObject o : qq["options"].as<JsonArray>()) one.options.push_back({o["id"] | "", o["label"] | ""});
+      d.questions.push_back(one);
+    }
   }
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   if (d.id == shared.want_detail) {

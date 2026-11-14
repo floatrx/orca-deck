@@ -31,6 +31,13 @@ struct QuestionOption {
   String id, label;
 };
 
+// One question of a group (AskUserQuestion with several questions, or multi-select).
+struct Question {
+  String id, text, header;
+  bool multi = false;
+  std::vector<QuestionOption> options;
+};
+
 // GET /api/agent (protocol.md § AgentDetail), trimmed to what the agent page shows.
 struct AgentDetail {
   String id, bucket, message;
@@ -39,6 +46,8 @@ struct AgentDetail {
   String item_id, question;
   int revision = 0;
   std::vector<QuestionOption> options;
+  std::vector<Question> questions;  // every question, when the item has a group
+  bool group_answerable = false;    // the knob can answer them all (`answers`)
 };
 
 // A command is its /api/cmd body. `kind` is the body's "cmd" (for retries and the status line).
@@ -341,7 +350,7 @@ void banner_tick();
 
 // ui.cpp (orca-deck)
 void ui_test_enqueue(const String &line);  // "T …" lines over USB: drive the UI from the Mac (tests)
-void ui_after_send(const String &agent_id);
+void ui_after_send(const String &agent_id, const String &sent = "");  // `sent`: the text, to fly away
 void deck_open_agent(const String &worktree, const String &agent);  // the banner's tap
 std::vector<Agent> deck_all_agents();
 std::vector<DeckTarget> deck_chat_targets();  // every chat agent, the one on screen in Claude first  // every agent the bridge knows, for the hub's orbits  // Apex: back to the main page, turned to the next waiting agent

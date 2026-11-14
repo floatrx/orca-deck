@@ -169,7 +169,9 @@ static void wifi_task(void *)
     radio(wanted);
     if (!wanted) {
       joined = false;
-      if (!relay) set_status(false, settings.wifi ? "waiting for the relay…" : "no link (wifi off)");
+      // Wi-Fi off is the user's choice, not the problem: the missing link is Bluetooth (user, 2026-11-14: «вимкнений
+      // Wi-Fi, а ти показуєш … Wi-Fi off»).
+      if (!relay) set_status(false, ble_connected() ? "waiting for the relay…" : "Bluetooth: looking for the Mac…");
       vTaskDelay(pdMS_TO_TICKS(250));
       continue;
     }

@@ -62,7 +62,8 @@ function newestAssistantText(page) {
 
 // The newest question the user can still answer: pending, and actionable per the page (the renderer's filter).
 // `answerable` is false when the watch cannot answer it with one tap: several questions, multi-select, or no
-// options (free text only).
+// options (free text only). `questions` carries every question; `groupAnswerable`: each has options, so the knob
+// can answer them all (multi-select too) with `answers`.
 function pendingQuestion(page) {
   const actionable = new Set(page.actionablePromptIds || []);
   const items = [...(page.items || [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
@@ -80,6 +81,13 @@ function pendingQuestion(page) {
       ...(first.header ? { header: first.header } : {}),
       options,
       answerable: questions.length === 1 && first.multiSelect !== true && options.length > 0,
+      ...(body.questions ? {
+        questions: body.questions.map((q) => ({
+          id: q.id, text: q.question || "", ...(q.header ? { header: q.header } : {}), multiSelect: q.multiSelect === true,
+          options: (q.options || []).map((option) => ({ id: option.id, label: option.label })),
+        })),
+        groupAnswerable: body.questions.length > 0 && body.questions.every((q) => (q.options || []).length > 0),
+      } : {}),
     };
   }
   return null;
@@ -108,6 +116,13 @@ function readStdin() {
   }
   if (mode === "answer") {
     const request = JSON.parse((await readStdin()) || "{}");
+    // Several questions or a multi-select go as one "question-group:" option, the encoding Orca's own renderer
+    // uses (its eV / nV: JSON of [{questionId, optionIds}], "%" escaped).
+    if (Array.isArray(request.answers)) {
+      request.optionId = "question-group:" + JSON.stringify(request.answers.map((a) => ({
+        questionId: a.questionId, optionIds: a.optionIds,
+      }))).replaceAll("%", "%25");
+    }
     if (typeof request.itemId !== "string" || typeof request.optionId !== "string" || !Number.isInteger(request.revision)) {
       throw new Error("answer needs itemId, revision and optionId");
     }
