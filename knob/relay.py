@@ -12,6 +12,10 @@ Lines on the wire (one JSON object per line, UTF-8):
   relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
   relay → knob   M {volume, muted, output, source, title, battery, charging, cpu, tz}   the Mac (GET /api/mac) for Clock and the Mac
                                            remote, plus tz (the Mac's UTC offset, minutes); every MAC_S, on change
+  relay → knob   X {"text"} | {"error"}    the transcript of a dictation (V lines)
+  knob → relay   V {"start":true} · V <base64 IMA-ADPCM, 16 kHz mono> · V {"end":true} | {"cancel":true}
+                                           dictation audio; on end the relay asks OpenAI (gpt-4o-transcribe, key in
+                                           ~/.config/orca-deck/openai.key) and answers with X
   knob → relay   C {"cmd": ...}            a command for /api/cmd; {"cmd": "detail", "id"} stays here and
                                            picks the agent whose detail the relay polls ("" stops it);
                                            {"cmd": "hello"} (KnobRelay.app, on a BLE connect) resends S and D
@@ -25,6 +29,8 @@ Logs go to stderr: with --stdio, stdout is the wire.
 Run: uv run knob/relay.py [--stdio] [--no-serial]   (stop it before flashing: it holds the serial port)
 """
 import argparse
+import base64
+import io
 import json
 import os
 import pathlib
@@ -33,6 +39,8 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
+import wave
 
 import serial
 from serial.tools import list_ports
@@ -57,6 +65,77 @@ def bridge(method, path, body=None):
                                      headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=5) as response:
         return json.loads(response.read())
+
+
+OPENAI_KEY_FILE = pathlib.Path.home() / ".config/orca-deck/openai.key"
+TRANSCRIBE_MODEL = "gpt-4o-transcribe"
+# Without a hint gpt-4o-transcribe heard Ukrainian as Czech ("Okej, testujeme"). The hint must not read like a
+# sentence: a list of terms or a sample phrase came back as the transcript itself (measured 2026-11-14).
+TRANSCRIBE_PROMPT = "Українська мова."
+
+STEPS = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107,
+         118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+         1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894,
+         6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+         32767]
+INDEX_SHIFT = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+
+
+def adpcm_to_wav(data):
+    """The knob's IMA ADPCM (two 4-bit codes per byte, low nibble first, one stream from predictor 0) → WAV bytes."""
+    predictor, index, pcm = 0, 0, bytearray()
+    for byte in data:
+        for code in (byte & 0x0F, byte >> 4):
+            step = STEPS[index]
+            delta = step >> 3
+            if code & 4: delta += step
+            if code & 2: delta += step >> 1
+            if code & 1: delta += step >> 2
+            predictor = max(-32768, min(32767, predictor - delta if code & 8 else predictor + delta))
+            index = max(0, min(88, index + INDEX_SHIFT[code]))
+            pcm += predictor.to_bytes(2, "little", signed=True)
+    # Peak-normalise: the knob's fixed +18 dB still left quiet speech that gpt-4o-transcribe answered with its own
+    # prompt (a known failure on faint audio, seen 2026-11-14).
+    samples = memoryview(bytes(pcm)).cast("h")
+    peak = max((abs(v) for v in samples), default=0)
+    if peak:
+        gain = min(16.0, 0.9 * 32767 / peak)
+        pcm = bytearray(b"".join(max(-32768, min(32767, int(v * gain))).to_bytes(2, "little", signed=True) for v in samples))
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(bytes(pcm))
+    return out.getvalue()
+
+
+def transcribe(wav):
+    """OpenAI speech to text. Returns (text, error)."""
+    try:
+        key = OPENAI_KEY_FILE.read_text().strip()
+    except OSError:
+        return "", "no OpenAI key on the Mac"
+    boundary = uuid.uuid4().hex
+    fields = {"model": TRANSCRIBE_MODEL, "prompt": TRANSCRIBE_PROMPT}
+    body = b"".join(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode()
+                    for k, v in fields.items())
+    body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"knob.wav\"\r\n"
+             "Content-Type: audio/wav\r\n\r\n").encode() + wav + f"\r\n--{boundary}--\r\n".encode()
+    request = urllib.request.Request("https://api.openai.com/v1/audio/transcriptions", data=body, method="POST",
+                                     headers={"Authorization": "Bearer " + key,
+                                              "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            text = json.loads(response.read()).get("text", "")
+        # On silence the model answers with its own prompt ("Українська мова." after 4 s of a quiet room).
+        if text.strip(" .!?").lower() == TRANSCRIBE_PROMPT.strip(" .!?").lower():
+            return "", "heard nothing"
+        return text, ""
+    except urllib.error.HTTPError as error:
+        return "", f"OpenAI HTTP {error.code}"
+    except Exception as error:
+        return "", str(error)[:80]
 
 
 def trim(state):
@@ -98,12 +177,40 @@ class Link:
         self.last_state = None
         self.last_full = 0.0
         self.last_mac = None
+        self.voice = None        # dictation audio (ADPCM bytes) between V start and V end
 
     def send(self, data):
         with self.lock:
             self.write(data)
 
+    def on_voice(self, body):
+        if body.startswith("{"):
+            event = json.loads(body)
+            if event.get("start"):
+                self.voice = bytearray()
+            elif event.get("cancel"):
+                self.voice = None
+                log(f"{self.name}: dictation cancelled")
+            elif event.get("end") and self.voice is not None:
+                audio, self.voice = bytes(self.voice), None
+                threading.Thread(target=self.finish_dictation, args=(audio,), daemon=True).start()
+        elif self.voice is not None:
+            self.voice += base64.b64decode(body)
+
+    def finish_dictation(self, audio):
+        started = time.time()
+        text, error = transcribe(adpcm_to_wav(audio))
+        log(f"{self.name}: dictation {len(audio) * 2 / 16000:.1f} s → {'error: ' + error if error else f'{len(text)} chars'}"
+            f" in {time.time() - started:.1f} s")  # the text itself stays out of the log
+        self.send(encode("X", {"error": error} if error else {"text": text}))
+
     def on_line(self, line):
+        if line.startswith("V "):
+            try:
+                self.on_voice(line[2:])
+            except Exception as error:  # a damaged line: the transcript may lose a word, the stream goes on
+                log(f"{self.name}: voice line dropped: {error}")
+            return
         if not line.startswith("C "):
             if line:
                 log(f"knob ({self.name}) │ {line}")

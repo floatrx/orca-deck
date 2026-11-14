@@ -186,6 +186,8 @@ void tz_persist()
   prefs.end();
 }
 
+static void apply_transcript(const String &body);
+
 void handle_line(const String &line, LinkKind via)
 {
   if (line.length() < 2 || line[1] != ' ') {
@@ -205,6 +207,8 @@ void handle_line(const String &line, LinkKind via)
     apply_detail(body);
   } else if (kind == 'M') {
     apply_mac(body);
+  } else if (kind == 'X') {
+    apply_transcript(body);
   } else if (kind == 'T' && via == LINK_USB) {
     ui_test_enqueue(body);  // test input over the cable only: it needs physical access
   } else if (kind == 'A') {
@@ -216,6 +220,24 @@ void handle_line(const String &line, LinkKind via)
       set_status(true, ok ? cmd + " ok" : cmd + " failed" + (note.length() ? ": " + note : ""));
     }
   }
+}
+
+void push_voice(const String &line)
+{
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  if (shared.voice.size() < 200) shared.voice.push_back(line);  // 20 s of audio waiting: the link is gone anyway
+  xSemaphoreGive(shared_mux);
+}
+
+static void apply_transcript(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  shared.transcript = doc["text"] | "";
+  shared.transcript_error = doc["error"] | "";
+  shared.transcript_version++;
+  xSemaphoreGive(shared_mux);
 }
 
 void push_command(JsonDocument &body)
@@ -308,6 +330,22 @@ static void dispatch_task(void *)
       if (!wifi_live) drop_stale_commands();
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
+    }
+    // Dictation audio first, as fast as the link takes it: a full BLE buffer is retried, not dropped.
+    for (int n = 0; n < 8; n++) {
+      xSemaphoreTake(shared_mux, portMAX_DELAY);
+      bool any = !shared.voice.empty();
+      String v = any ? shared.voice.front() : String();
+      xSemaphoreGive(shared_mux);
+      if (!any) break;
+      bool sent = link == LINK_BLE ? ble_send_line(v) : (serial_send_line(v), true);
+      if (!sent) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        break;
+      }
+      xSemaphoreTake(shared_mux, portMAX_DELAY);
+      if (!shared.voice.empty()) shared.voice.pop_front();
+      xSemaphoreGive(shared_mux);
     }
     String detail = detail_request();
     if (detail.length()) {

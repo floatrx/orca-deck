@@ -39,6 +39,11 @@ output device's name under the dial, and what plays (`YouTube` + the video's tit
 MediaRemote, so the bridge asks Music, Spotify and the YouTube tabs of Chrome / Safari itself (macOS asks once to
 let Hammerspoon control the browser). The hub row shows it too. The Clock's badge is a live analog face.
 
+**Dictation** (orca-deck): a hold on an agent starts it (a click); let go and speak — the ring breathes with your
+voice; **tap when done** (a swipe cancels). The relay has it transcribed (OpenAI `gpt-4o-transcribe`, key in `~/.config/orca-deck/openai.key`, mode 600, never in
+the repo) and the text comes back — **tap sends it to the agent** (`say`), a swipe drops it. 60 s at most. The audio
+streams while you speak (IMA ADPCM, 8 KB/s over BLE), so the text is back ~1 s after the tap. The transcript never goes to the relay's log.
+
 **Microphone** (spike): PDM, clock GPIO45 / data GPIO46, on I2S0 (sound plays on I2S1). `T mic <s>` records into
 PSRAM, prints dBFS per 100 ms and streams the samples as `MIC <base64>` lines; a quiet room reads −42…−54 dBFS,
 DC offset ~1500 (subtract it).
@@ -60,7 +65,8 @@ Orca follows), a tap below it goes to the app under it.
 |---|---|---|---|
 | crown | workspace (Orca follows after 1 s) | row | row |
 | tap | `enter` | tick a variant / Send / answer | change the value |
-| hold | next agent of the workspace | — | — |
+| hold | **dictate** to the agent (below) | — | — |
+| swipe up | next agent of the workspace | — | — |
 | double tap | `send` (Enter in Orca) | — | — |
 | swipe right | its settings | back | — |
 | swipe left | agent page | — | back |
@@ -112,10 +118,14 @@ uv run knob/test/drive.py "wait 9" "report" "turn 1" "turn -1" "wait 2" "tap" "s
 ```
 
 Verbs: `turn N` · `tap` · `hold [ms]` · `swipe left|right|down` · `open <app>` · `home` · `alert` (the banner for the agent on
-screen) · `tap banner` · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
+screen) · `tap banner` · `dictate` (the dictation screen's state, level and text) · `hold` then `tap` (start, then done) · `saver off|on|now` (off until the next reboot: keeps the screensaver out of a test) · `haptics` (level and
 DRV2605 write count: a silent knob with `level=0` is Settings → Haptics off) · `select <worktree id>|<agent id>` · `sound tick|buzz|test` ·
 `ble-drop` · `report` (page, selection, agent, link, status, age; the agent page's rows / focus / ticks), and
 `wait <s>`. Opening the port resets the S3, hence the first `wait 9`. Send tests go to a scratch chat session only.
+
+**A dictation test ends with `swipe left`, never `tap`**: a tap on the result sends the transcript to the agent on
+screen for real (2026-11-14: a test tap sent «Перевіряємо.» into a live session). To test the send, select a scratch
+chat session first (`select <worktree>|<agent>`).
 
 **`hold 2500` on Settings → Connection forgets the bond for real** — the Mac keeps its key and every connect fails
 with "Peer removed pairing information". Re-pair without rebuilding the app (a rebuild makes macOS ask for

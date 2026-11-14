@@ -84,10 +84,37 @@ static lv_obj_t *add_row(const String &text, int kind, int index)
   return row;
 }
 
+static lv_obj_t *status_line;  // "Working…" under the message: a spinner and grey text, not focusable
+
+static void add_status(const char *text)
+{
+  status_line = lv_obj_create(body);
+  lv_obj_set_size(status_line, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_bg_opa(status_line, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(status_line, 0, 0);
+  lv_obj_set_style_pad_all(status_line, 0, 0);
+  lv_obj_set_style_pad_column(status_line, 8, 0);
+  lv_obj_set_flex_flow(status_line, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(status_line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(status_line, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+  lv_obj_t *spin = lv_spinner_create(status_line, 1000, 60);
+  lv_obj_set_size(spin, 16, 16);
+  lv_obj_set_style_arc_width(spin, 2, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(spin, 2, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(spin, lv_color_hex(0x2C2D31), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(spin, lv_color_hex(C_MUTED), LV_PART_INDICATOR);
+  lv_obj_clear_flag(spin, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_t *label = lv_label_create(status_line);
+  lv_obj_set_style_text_font(label, &deck_14, 0);
+  lv_obj_set_style_text_color(label, lv_color_hex(C_MUTED), 0);
+  lv_label_set_text(label, text);
+}
+
 static void rebuild()
 {
   for (lv_obj_t *row : rows) lv_obj_del(row);
   rows.clear();
+  if (status_line) lv_obj_del(status_line), status_line = nullptr;
   row_kind.clear();
   row_index.clear();
 
@@ -105,7 +132,7 @@ static void rebuild()
       add_row("answer it in Orca", ROW_OPTION, -1);
     }
   } else if (loaded && working) {
-    add_row("Working…", ROW_OPTION, -1);
+    add_status("Working…");  // plain grey with a spinner, not a row: nothing to pick (user, 2026-11-14)
   } else if (loaded && !page_detail.next.empty()) {
     for (size_t i = 0; i < page_detail.next.size(); i++) add_row((i == 0 ? "• " : "") + page_detail.next[i], ROW_VARIANT, i);
     add_row("Send", ROW_SEND, 0);
@@ -251,6 +278,7 @@ void agent_page_create()
   lv_obj_set_style_border_width(body, 0, 0);
   lv_obj_set_style_pad_all(body, 0, 0);
   lv_obj_set_style_pad_row(body, 8, 0);
+  lv_obj_set_style_pad_bottom(body, 44, 0);  // the last line clears the round bottom edge (it clipped "Working…")
   lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_OFF);

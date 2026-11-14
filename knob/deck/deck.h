@@ -69,6 +69,9 @@ struct Shared {
   LinkKind link = LINK_NONE;
   std::deque<Command> commands;
   MacStatus mac;
+  std::deque<String> voice;       // V lines for the relay (dictation), sent before commands
+  String transcript, transcript_error;  // the relay's X line
+  uint32_t transcript_version = 0;
 };
 
 extern SemaphoreHandle_t shared_mux;
@@ -86,7 +89,8 @@ void set_status(bool online, const String &text);
 int tz_offset_min();  // the Mac's UTC offset, from the M line, kept in NVS for the Clock offline
 void tz_persist();    // LVGL task only: saves a new offset to NVS
 void tz_load();       // at boot, before the links start
-String status_problem();  // the status line, only when something is wrong (user: «тільки якщо є помилка»)
+String status_problem();
+void push_voice(const String &line);  // a V line (dictation audio) for the relay  // the status line, only when something is wrong (user: «тільки якщо є помилка»)
 bool apply_state(const String &body, const String &via);
 bool apply_detail(const String &body);
 void handle_line(const String &line, LinkKind via);  // S / A / D / K lines from a relay
@@ -206,6 +210,20 @@ String mac_report();
 
 // mic.cpp — the PDM microphone (spike: T mic <seconds>)
 void mic_test(int seconds);
+bool dictation_start();          // records while the finger is held; false when the mic is busy
+void dictation_stop(bool send);  // send: the relay transcribes; else it drops the audio
+bool dictation_recording();
+int dictation_level();           // the last 100 ms, dBFS
+
+// dictate.cpp — orca-deck's hold-to-dictate screen
+void dictate_create();
+void dictate_begin(const String &title, const String &agent);
+void dictate_tick();
+void dictate_tap();
+void dictate_swipe();
+void dictate_close();
+bool dictate_is_open();
+String dictate_report();
 
 // banner.cpp — needs-you / done of an agent while orca-deck is not on screen
 void banner_create();

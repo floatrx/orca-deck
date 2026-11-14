@@ -31,7 +31,13 @@ bool ble_send_line(const String &line)
   chunk = chunk > 3 ? chunk - 3 : 20;
   for (size_t at = 0; at < out.length(); at += chunk) {
     size_t n = min(chunk, out.length() - at);
-    if (!tx->notify((const uint8_t *)out.c_str() + at, n, conn_handle)) return false;
+    // A full buffer mid-line is waited out here: a retry of the whole line would repeat this line's first chunks
+    // and corrupt it (dictation streams ~50 notifications a second).
+    int tries = 0;
+    while (!tx->notify((const uint8_t *)out.c_str() + at, n, conn_handle)) {
+      if (++tries > 40 || !ble_connected()) return at == 0 ? false : true;  // mid-line: the line is lost, not doubled
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
   }
   return true;
 }

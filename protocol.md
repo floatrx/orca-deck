@@ -266,6 +266,8 @@ Relay lines, one JSON object each, `\n`-terminated:
 | `D` | relay → knob | `AgentDetail` trimmed to `id, bucket, next, question, message (≤1200)`; sent when it changes |
 | `A` | relay → knob | the `/api/cmd` answer (`Ack`) |
 | `M` | relay → knob | `{volume, muted, output (≤40), source, title (≤100), battery, charging, cpu, tz}` — `source`/`title`: what plays (`playing` below) from `GET /api/mac` every 2 s, sent on a change; `tz` is the Mac's UTC offset in minutes (the knob keeps UTC and saves `tz` in NVS, so its Clock is right offline) |
+| `X` | relay → knob | `{text}` or `{error}` — the transcript of a dictation |
+| `V` | knob → relay | dictation audio: `V {"start":true}`, then `V <base64>` (IMA ADPCM, 16 kHz mono, two codes per byte, low nibble first, one stream from predictor 0), then `V {"end":true}` (transcribe) or `V {"cancel":true}` |
 | `C` | knob → relay | an `/api/cmd` body (`go`, `enter`, `send`, `say`, `answer`); `{cmd:"detail", id}` stays in the relay and picks the agent whose `AgentDetail` it polls (`""` stops); `{cmd:"hello"}` (KnobRelay.app on each BLE connect) makes it resend `S` and `D` at once |
 
 ## ntfy

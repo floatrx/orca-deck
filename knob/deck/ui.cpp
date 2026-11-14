@@ -1,7 +1,7 @@
 // orca-deck, an app in the hub (hub.cpp): the main page and its pages, as Apex (watch/Apex/ContentView.swift):
 // its settings (swipe right) · the main page · the agent page (swipe left). Swipe down goes to the hub.
-// Main page: crown → workspace (Orca follows after 1 s of rest) · tap → enter · hold → next agent ·
-// double tap → send. Selection rules come from Apex's Selection (watch/ApexCore/.../Selection.swift).
+// Main page: crown → workspace (Orca follows after 1 s of rest) · tap → enter · hold → dictate to the agent
+// (dictate.cpp) · swipe up → next agent · double tap → send. Selection rules come from Apex's Selection (watch/ApexCore/.../Selection.swift).
 #include "deck.h"
 #include <map>
 #include <math.h>
@@ -474,7 +474,7 @@ static void motion(uint32_t now)
   static uint32_t last = 0;
   if (now - last < 33) return;
   last = now;
-  bool main_page = hub_current() == &app_deck && !settings_page_open() && !agent_page_is_open();
+  bool main_page = hub_current() == &app_deck && !settings_page_open() && !agent_page_is_open() && !dictate_is_open();
   bool working = main_page && motion_bucket == "working";
   if (working) {
     lv_obj_clear_flag(comet, LV_OBJ_FLAG_HIDDEN);
@@ -496,6 +496,7 @@ static void motion(uint32_t now)
 
 static void deck_tap()
 {
+  if (dictate_is_open()) return dictate_tap();
   if (settings_page_open()) return settings_page_tap();
   if (agent_page_is_open()) return agent_page_tap();
   if (single_tap_at) {
@@ -507,13 +508,23 @@ static void deck_tap()
   single_tap_at = millis() + DOUBLE_TAP_MS;
 }
 
+// Hold: dictate to the agent on screen (it was "next agent" until 2026-11-14; that moved to swipe up).
 static void deck_hold()
 {
-  if (!settings_page_open() && !agent_page_is_open()) next_agent();
+  if (dictate_is_open() || settings_page_open() || agent_page_is_open() || worktrees.empty()) return;
+  single_tap_at = 0;
+  const Worktree &w = worktrees[index_shown];
+  const Agent *a = shown_agent(w);
+  if (!a) {
+    haptic_buzz(1);
+    return;
+  }
+  dictate_begin(ui_title(w), a->id);
 }
 
 static void deck_turn(int step)
 {
+  if (dictate_is_open()) return;
   if (settings_page_open()) settings_page_turn(step);
   else if (agent_page_is_open()) agent_page_turn(step);
   else turn(step);
@@ -521,6 +532,11 @@ static void deck_turn(int step)
 
 static void deck_swipe(lv_dir_t dir)
 {
+  if (dictate_is_open()) return dictate_swipe();
+  if (dir == LV_DIR_TOP) {
+    if (!settings_page_open() && !agent_page_is_open()) next_agent();
+    return;
+  }
   single_tap_at = 0;
   if (settings_page_open()) {
     if (dir == LV_DIR_LEFT) settings_page_show(false), haptic_click();
@@ -570,6 +586,7 @@ static void deck_show()
 
 static void deck_hide()
 {
+  dictate_close();
   ui_close_pages();
   single_tap_at = 0;
   if (commit_at) commit();  // a crown choice still resting goes to Orca, as it would have
@@ -631,6 +648,7 @@ static void run_test(const String &line)
   } else if (verb == "ble-drop") ble_drop();
   else if (verb == "haptics") Serial.println(haptic_report());
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
+  else if (verb == "dictate") Serial.println(dictate_report());
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
     if (a) banner_show(worktrees[index_shown].id, a->id, ui_title(worktrees[index_shown]), "attention");
@@ -677,6 +695,7 @@ static void loop_tick(lv_timer_t *)
   timer_tick();
   clock_tick();
   mac_tick();
+  dictate_tick();
   tz_persist();
   hub_tick();
   banner_tick();
@@ -750,6 +769,7 @@ extern "C" void ui_init(void)
   timer_create();
   clock_create();
   mac_create();
+  dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it
   buddy_create();  // last: the screensaver covers everything
