@@ -454,6 +454,54 @@ local function answer(message)
   return nil
 end
 
+-- What plays (macOS 15+ closed MediaRemote, so the players are asked directly): Music, Spotify, then a YouTube
+-- watch tab in Chrome or Safari. Asked in the background every 5 s, only while a client reads /api/mac. The first
+-- ask of a browser makes macOS ask once to let Hammerspoon control it.
+local NOW_PLAYING_SCRIPT = [[
+set out to ""
+if application "Music" is running then
+  tell application "Music" to if player state is playing then set out to "Music" & tab & (name of current track) & " — " & (artist of current track)
+end if
+if out is "" and application "Spotify" is running then
+  tell application "Spotify" to if player state is playing then set out to "Spotify" & tab & (name of current track) & " — " & (artist of current track)
+end if
+if out is "" and application "Google Chrome" is running then
+  tell application "Google Chrome"
+    repeat with w in windows
+      repeat with t in tabs of w
+        if URL of t contains "youtube.com/watch" then
+          set out to "YouTube" & tab & (title of t)
+          exit repeat
+        end if
+      end repeat
+      if out is not "" then exit repeat
+    end repeat
+  end tell
+end if
+if out is "" and application "Safari" is running then
+  tell application "Safari"
+    repeat with w in windows
+      repeat with t in tabs of w
+        if URL of t contains "youtube.com/watch" then
+          set out to "YouTube" & tab & (name of t)
+          exit repeat
+        end if
+      end repeat
+      if out is not "" then exit repeat
+    end repeat
+  end tell
+end if
+return out
+]]
+
+local function askNowPlaying()
+  if deckBridge.nowPlayingTask and deckBridge.nowPlayingTask:isRunning() then return end
+  deckBridge.nowPlayingTask = hs.task.new("/usr/bin/osascript", function(code, out)
+    deckBridge.nowPlaying = code == 0 and core.nowPlayingOf(out) or nil
+  end, { "-e", NOW_PLAYING_SCRIPT })
+  deckBridge.nowPlayingTask:start()
+end
+
 --- GET /api/mac: what the knob's Clock and Mac remote show. CPU is measured between two calls (the relay polls
 --- every 2 s), so the first answer has none.
 local function macStatus()
@@ -471,6 +519,12 @@ local function macStatus()
   local current = ticks and ticks.overall
   out.cpu = core.cpuPercent(deckBridge.cpuTicks, current)
   deckBridge.cpuTicks = current
+  out.playing = deckBridge.nowPlaying
+  local now = hs.timer.secondsSinceEpoch()
+  if now - (deckBridge.nowPlayingAt or 0) >= 5 then
+    deckBridge.nowPlayingAt = now
+    askNowPlaying()
+  end
   return out
 end
 

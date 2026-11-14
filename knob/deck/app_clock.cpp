@@ -157,4 +157,4 @@ void clock_create()
   lv_obj_align(mac_label, LV_ALIGN_CENTER, 50, 52);
 }
 
-const App app_clock = {"Clock", LV_SYMBOL_REFRESH, C_WORKING, show, hide, subtitle, nullptr, nullptr, nullptr, nullptr};
+const App app_clock = {"Clock", "", C_WORKING, show, hide, subtitle, nullptr, nullptr, nullptr, nullptr};

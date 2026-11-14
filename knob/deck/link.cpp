@@ -161,6 +161,8 @@ static void apply_mac(const String &body)
   mac.muted = doc["muted"] | false;
   mac.charging = doc["charging"] | false;
   mac.output = doc["output"] | "";
+  mac.source = doc["source"] | "";
+  mac.title = doc["title"] | "";
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;

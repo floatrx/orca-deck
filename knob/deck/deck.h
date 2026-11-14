@@ -54,6 +54,7 @@ struct MacStatus {
   int volume = -1, battery = -1, cpu = -1;
   bool muted = false, charging = false;
   String output;    // the Mac's sound output device
+  String source, title;  // what plays: "YouTube" / "Music" / "Spotify" and the track; "" when nothing
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -202,6 +203,9 @@ String clock_report();
 void mac_create();
 void mac_tick();  // every frame: sends the batched volume, takes the Mac's numbers
 String mac_report();
+
+// mic.cpp — the PDM microphone (spike: T mic <seconds>)
+void mic_test(int seconds);
 
 // banner.cpp — needs-you / done of an agent while orca-deck is not on screen
 void banner_create();

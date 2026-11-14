@@ -249,6 +249,16 @@ function core.cpuPercent(previous, current)
   return math.floor(100 * active / (active + idle) + 0.5)
 end
 
+--- "YouTube\t(3) Song - YouTube" → { source = "YouTube", title = "Song" }; nil for an empty answer.
+--- The browser tab title carries a notification count in front and the site's name behind.
+function core.nowPlayingOf(raw)
+  if type(raw) ~= "string" then return nil end
+  local source, title = raw:match("^([^\t]+)\t(.-)%s*$")
+  if not source or title == "" then return nil end
+  title = title:gsub("^%(%d+%)%s*", ""):gsub("%s*%- YouTube$", "")
+  return { source = source, title = core.clip(title, 120) }
+end
+
 --- Longest id Orca takes for an item or an option (AGENT_SESSION_RESPONSE_OPTION_ID_MAX_LENGTH).
 local ID_MAX = 1024
 core.QUESTION_OPTIONS_MAX = 6

@@ -1,15 +1,18 @@
 // Mac remote, an app in the hub: the Mac's output volume on the crown, media keys on taps and swipes.
 //   crown: volume ±2 per detent · tap: play / pause · swipe left: next track · swipe right: previous · hold: mute
 // The volume moves on the knob at once; the crown's steps go to the bridge in one `mac volume` every 120 ms, and
-// the Mac's own number (M line) takes over again 1.5 s after the last turn. No track title: macOS 15+ closed
-// MediaRemote to third parties.
+// the Mac's own number (M line) takes over again 1.5 s after the last turn. What plays: macOS 15+ closed
+// MediaRemote to third parties, so the bridge asks the players: Music, Spotify, a YouTube tab (the M line's
+// source / title).
 #include "deck.h"
 
 #define STEP 2
 #define SEND_MS 120
 #define SETTLE_MS 1500
 
-static lv_obj_t *page, *gauge, *value_label, *unit_label, *icon_label, *output_label, *flash_label, *hint_label;
+static lv_obj_t *page, *gauge, *value_label, *unit_label, *icon_label, *output_label, *flash_label, *hint_label, *source_label,
+    *title_label;
+static String now_playing;  // "YouTube: Lynnic - Gravity" for the hub's subtitle
 static int volume = -1;  // shown volume; -1: unknown yet
 static bool muted = false;
 static int pending = 0;  // crown steps not sent yet, in percent points
@@ -44,7 +47,6 @@ static void flash(const char *symbol)
   lv_obj_set_style_opa(flash_label, LV_OPA_COVER, 0);
   lv_obj_clear_flag(flash_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(unit_label, LV_OBJ_FLAG_HIDDEN);
   flash_until = millis() + 700;
 }
 
@@ -99,7 +101,6 @@ void mac_tick()
     flash_until = 0;
     lv_obj_add_flag(flash_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(unit_label, LV_OBJ_FLAG_HIDDEN);
   } else if (flash_until) {
     lv_obj_set_style_opa(flash_label, (lv_opa_t)min<uint32_t>(255, (flash_until - now) * 255 / 400), 0);
   }
@@ -116,12 +117,18 @@ void mac_tick()
       paint();
     }
   }
-  if (page && !lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) set_text(output_label, mac.output);
+  now_playing = mac.title.length() ? mac.source + ": " + mac.title : "";
+  if (page && !lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) {
+    set_text(output_label, mac.output);
+    set_text(source_label, mac.title.length() ? mac.source : "");
+    set_text(title_label, mac.title);
+  }
 }
 
 static String subtitle()
 {
   if (volume < 0) return "no Mac yet";
+  if (now_playing.length()) return now_playing;
   return muted ? "muted" : "volume " + String(volume) + "%";
 }
 
@@ -175,10 +182,16 @@ void mac_create()
   set_text(unit_label, "volume");
   flash_label = make_label(page, &lv_font_montserrat_48, C_WORKING, -8, 220);
   lv_obj_add_flag(flash_label, LV_OBJ_FLAG_HIDDEN);
-  output_label = make_label(page, &deck_14, C_MUTED, 66, 200);
-  hint_label = make_label(page, &deck_14, C_MUTED, 128, 190);
-  set_text(hint_label, "tap play · swipe track · hold mute");
+  output_label = make_label(page, &deck_14, C_MUTED, 30, 160);
+  lv_obj_add_flag(unit_label, LV_OBJ_FLAG_HIDDEN);  // the output device's name sits there now
+  // What plays: the source small, the title scrolling round, inside the dial's open bottom.
+  source_label = make_label(page, &deck_bold_16, 0xB18CFF, 70, 180);
+  lv_obj_set_style_text_letter_space(source_label, 1, 0);
+  title_label = make_label(page, &deck_16, C_INK, 94, 230);
+  lv_label_set_long_mode(title_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  hint_label = make_label(page, &deck_14, C_MUTED, 134, 170);
+  set_text(hint_label, "tap play · swipe track");
   paint();
 }
 
-const App app_mac = {"Mac", LV_SYMBOL_AUDIO, 0xB18CFF, show, hide, subtitle, turn, tap, hold, swipe};
+const App app_mac = {"Mac", LV_SYMBOL_VOLUME_MAX, 0xB18CFF, show, hide, subtitle, turn, tap, hold, swipe};

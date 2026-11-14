@@ -35,7 +35,13 @@ buzzes 3× and shows a banner wherever you are; a tap on it opens the Timer.
 
 **Mac** (remote): the crown sets the Mac's output volume (±2 % per detent; the knob moves at once, the steps go
 in one command every 120 ms), tap = play / pause, swipe left / right = next / previous track, hold = mute; the
-output device's name under the dial. No track title (macOS 15+ closed MediaRemote).
+output device's name under the dial, and what plays (`YouTube` + the video's title, scrolling): macOS 15+ closed
+MediaRemote, so the bridge asks Music, Spotify and the YouTube tabs of Chrome / Safari itself (macOS asks once to
+let Hammerspoon control the browser). The hub row shows it too. The Clock's badge is a live analog face.
+
+**Microphone** (spike): PDM, clock GPIO45 / data GPIO46, on I2S0 (sound plays on I2S1). `T mic <s>` records into
+PSRAM, prints dBFS per 100 ms and streams the samples as `MIC <base64>` lines; a quiet room reads −42…−54 dBFS,
+DC offset ~1500 (subtract it).
 
 **Boot**: the Earth turns with a spinner and "connecting…" until the Mac answers (5 s at most), then the list fades
 in from the centre. **Settings → Screensaver**: off / 5 / 10 / 15 (default) / 20 / 25 / 30 s / 1 min.

@@ -630,6 +630,7 @@ static void run_test(const String &line)
     Serial.printf("sound: ready=%d level=%d\n", sound_ready(), settings.sound);
   } else if (verb == "ble-drop") ble_drop();
   else if (verb == "haptics") Serial.println(haptic_report());
+  else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
     if (a) banner_show(worktrees[index_shown].id, a->id, ui_title(worktrees[index_shown]), "attention");

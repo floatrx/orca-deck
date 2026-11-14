@@ -3,6 +3,8 @@
 // Swipe down in any app comes back here, to the same row. .work/plans/knob-hub.md
 // Behind the list the Earth turns (globe.cpp).
 #include "deck.h"
+#include <math.h>
+#include <time.h>
 
 static const App *const APPS[] = {&app_deck, &app_timer, &app_mac, &app_clock, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
@@ -10,6 +12,27 @@ static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
 static lv_obj_t *page, *link_label;
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
+// The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
+static lv_obj_t *hands[SLOTS][2];
+static lv_point_t hand_pts[SLOTS][2][2];
+
+static void clock_face(int slot, bool on)
+{
+  for (int h = 0; h < 2; h++) on ? lv_obj_clear_flag(hands[slot][h], LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(hands[slot][h], LV_OBJ_FLAG_HIDDEN);
+  if (!on) return;
+  time_t now = time(nullptr) + tz_offset_min() * 60;
+  struct tm t;
+  gmtime_r(&now, &t);
+  int size = lv_obj_get_width(badges[slot]), c = size / 2;
+  float minute = (t.tm_min + t.tm_sec / 60.0f) / 60 * 2 * M_PI, hour = (t.tm_hour % 12 + t.tm_min / 60.0f) / 12 * 2 * M_PI;
+  float len[2] = {size * 0.24f, size * 0.36f};  // hour, minute
+  float ang[2] = {hour, minute};
+  for (int h = 0; h < 2; h++) {
+    hand_pts[slot][h][0] = {(lv_coord_t)c, (lv_coord_t)c};
+    hand_pts[slot][h][1] = {(lv_coord_t)(c + len[h] * sinf(ang[h])), (lv_coord_t)(c - len[h] * cosf(ang[h]))};
+    lv_line_set_points(hands[slot][h], hand_pts[slot][h], 2);
+  }
+}
 static int focus = 0;
 static const App *current = nullptr;  // nullptr: the hub is on screen
 static bool pressed = false;
@@ -41,7 +64,8 @@ static void refresh()
     const App *app = APPS[i];
     lv_obj_clear_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(badges[slot], lv_color_hex(app->color), 0);
-    set_text(icons[slot], app->icon);
+    set_text(icons[slot], app == &app_clock ? "" : app->icon);
+    clock_face(slot, app == &app_clock);
     set_text(names[slot], app->name);
     set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
@@ -303,6 +327,14 @@ void hub_create()
     lv_obj_set_style_pad_all(badge, 0, 0);
     lv_obj_clear_flag(badge, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
 
+    for (int h = 0; h < 2; h++) {
+      lv_obj_t *hand = hands[slot][h] = lv_line_create(badge);
+      lv_obj_set_pos(hand, 0, 0);
+      lv_obj_set_style_line_width(hand, h ? (mid ? 3 : 2) : (mid ? 4 : 3), 0);
+      lv_obj_set_style_line_color(hand, lv_color_hex(C_BG), 0);
+      lv_obj_set_style_line_rounded(hand, true, 0);
+      lv_obj_add_flag(hand, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_t *icon = icons[slot] = lv_label_create(badge);
     lv_obj_set_style_text_font(icon, mid ? &lv_font_montserrat_28 : &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(icon, lv_color_hex(C_BG), 0);
