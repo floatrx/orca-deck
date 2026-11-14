@@ -65,4 +65,19 @@ void haptic_buzz(int times)
   sound_buzz(times);
 }
 
+// Going home (swipe down, waking into the hub): a short smooth ramp down that lands on a click — the screen
+// "drops into place". Its own shape, so it never reads as a tap or an alert (user, 2026-11-14: a plain click on
+// swipe down went unnoticed).
+void haptic_home()
+{
+  plays++;
+  if (settings.haptics) {
+    drv_write(0x04, 74);  // Transition Ramp Down Short Smooth 1 (100 → 0 %)
+    drv_write(0x05, CLICKS[3 - settings.haptics]);
+    drv_write(0x06, 0x00);
+    drv_write(0x0C, 0x01);  // GO
+  }
+  sound_click();
+}
+
 void haptic_sample() { haptic_click(1); }

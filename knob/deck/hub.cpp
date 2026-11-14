@@ -125,7 +125,7 @@ static bool wake()
   buddy_input();
   if (!buddy_is_shown()) return false;
   buddy_hide();
-  haptic_click();
+  haptic_home();
   hub_home();
   return true;
 }
@@ -163,7 +163,7 @@ static void swipe(lv_dir_t dir)
   if (wake()) return;
   if (dir == LV_DIR_BOTTOM) {
     if (current) {
-      haptic_click();
+      haptic_home();
       hub_home();
     }
     return;

@@ -118,6 +118,7 @@ void haptic_tick();
 void haptic_click(int times = 1);
 void haptic_buzz(int times = 1);
 void haptic_sample();
+void haptic_home();  // the hub's own feel: a ramp down landing on a click
 String haptic_report();
 uint32_t haptic_plays();  // every haptic asked for so far: the hub's "every gesture answers" check
 
