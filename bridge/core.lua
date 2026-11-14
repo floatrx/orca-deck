@@ -221,19 +221,25 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus" or cmd == "pr") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil
 end
 
 --- The knob's Mac remote (cmd "mac"): what `action` may be.
-core.MAC_ACTIONS = { volume = true, mute = true, play = true, next = true, prev = true }
+--- inmute / involume: the Mac's microphone (the knob's Mic Mute).
+core.MAC_ACTIONS = { volume = true, mute = true, play = true, next = true, prev = true, inmute = true, involume = true }
 
---- Why a mac command cannot run, or nil when it can. `volume` takes `value`: a step (-100…100, percent points).
+--- Why a mac command cannot run, or nil when it can. `volume` / `involume` take `value`: a step (-100…100, percent
+--- points); `inmute` takes an optional boolean `value` (set it; without one, toggle).
 function core.macProblem(message)
-  if not core.MAC_ACTIONS[message.action] then return "mac needs action volume|mute|play|next|prev" end
-  if message.action == "volume" then
+  if not core.MAC_ACTIONS[message.action] then return "mac needs action volume|mute|play|next|prev|inmute|involume" end
+  if message.action == "inmute" then
+    if message.value ~= nil and type(message.value) ~= "boolean" then return "inmute takes a boolean value" end
+    return nil
+  end
+  if message.action == "volume" or message.action == "involume" then
     local v = tonumber(message.value)
     if not v or v < -100 or v > 100 then return "volume needs a value step from -100 to 100" end
   end
@@ -463,6 +469,112 @@ function core.lanURLs(interfaces, primary, port)
     end
   end
   return urls
+end
+
+--- The knob's Prompt Palette: stock prompts in groups, typed into the agent on screen by `say`. The file
+--- ~/.config/orca-deck/prompts.json replaces them: [{ "name": "…", "prompts": ["…", …] }, …].
+core.PROMPT_GROUPS, core.PROMPTS_PER_GROUP, core.PROMPT_MAX = 6, 12, 200
+core.DEFAULT_PROMPTS = {
+  { name = "Робота", prompts = { "продовжуй", "що далі?", "поясни, що ти зробив", "покажи diff змін", "зупинись і підсумуй" } },
+  { name = "Перевірка", prompts = { "запусти тести", "запусти lint і tsc -b", "перевір візуально", "зроби code review змін", "що лишилось у .work/todo.md?" } },
+  { name = "Відповіді", prompts = { "так", "ні", "ок, роби", "зачекай, не роби цього", "давай простіше" } },
+}
+
+--- The palette from a decoded prompts.json, trimmed to the knob's limits; the defaults when it is not usable.
+function core.promptsOf(doc)
+  local out = {}
+  for _, group in ipairs(type(doc) == "table" and doc or {}) do
+    if #out >= core.PROMPT_GROUPS then break end
+    if type(group) == "table" and type(group.name) == "string" and type(group.prompts) == "table" then
+      local prompts = {}
+      for _, p in ipairs(group.prompts) do
+        if type(p) == "string" and p:match("%S") and #prompts < core.PROMPTS_PER_GROUP and (utf8.len(p) or #p) <= core.PROMPT_MAX then
+          prompts[#prompts + 1] = p
+        end
+      end
+      if #prompts > 0 then out[#out + 1] = { name = group.name, prompts = prompts } end
+    end
+  end
+  if #out == 0 then return core.DEFAULT_PROMPTS end
+  return out
+end
+
+--- PR Radar: one GitHub GraphQL query (via `gh api graphql`) for the user's open PRs and the ones waiting on their
+--- review. Each PR: { key = "owner/repo#12", repo, number, title, url, checks = ok|fail|run|none, mine, draft,
+--- review = approved|changes|"" , failedRuns = { run ids } }.
+core.PR_QUERY = [[query {
+  viewer { pullRequests(states: OPEN, first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...pr } } }
+  search(type: ISSUE, query: "is:pr is:open review-requested:@me archived:false", first: 10) { nodes { ...pr } }
+}
+fragment pr on PullRequest {
+  number title url isDraft reviewDecision repository { nameWithOwner }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state }
+    checkSuites(first: 20) { nodes { conclusion workflowRun { databaseId } } } } } }
+}]]
+core.PR_MAX = 10
+
+local CHECKS = { SUCCESS = "ok", FAILURE = "fail", ERROR = "fail", PENDING = "run", EXPECTED = "run" }
+
+local function prOf(node, mine)
+  if type(node) ~= "table" or not tonumber(node.number) or type(node.repository) ~= "table" then return nil end
+  local commit = type(node.commits) == "table" and type(node.commits.nodes) == "table" and node.commits.nodes[1]
+  commit = type(commit) == "table" and commit.commit or {}
+  local rollup = type(commit.statusCheckRollup) == "table" and commit.statusCheckRollup.state or nil
+  local failed = {}
+  local suites = type(commit.checkSuites) == "table" and commit.checkSuites.nodes or {}
+  for _, suite in ipairs(type(suites) == "table" and suites or {}) do
+    local run = type(suite) == "table" and type(suite.workflowRun) == "table" and tonumber(suite.workflowRun.databaseId)
+    if run and (suite.conclusion == "FAILURE" or suite.conclusion == "TIMED_OUT") then failed[#failed + 1] = run end
+  end
+  local review = node.reviewDecision == "APPROVED" and "approved" or node.reviewDecision == "CHANGES_REQUESTED" and "changes" or ""
+  return { key = node.repository.nameWithOwner .. "#" .. node.number, repo = node.repository.nameWithOwner,
+    number = tonumber(node.number), title = type(node.title) == "string" and node.title or "", url = node.url,
+    checks = CHECKS[rollup] or "none", mine = mine, draft = node.isDraft == true, review = review, failedRuns = failed }
+end
+
+--- The radar's list from the GraphQL answer: failing first, then running, then the rest; at most PR_MAX.
+function core.prsOf(doc)
+  local data = type(doc) == "table" and doc.data
+  if type(data) ~= "table" then return nil end
+  local out, seen = {}, {}
+  local function add(nodes, mine)
+    for _, node in ipairs(type(nodes) == "table" and nodes or {}) do
+      local pr = prOf(node, mine)
+      if pr and not seen[pr.key] then
+        seen[pr.key] = true
+        out[#out + 1] = pr
+      end
+    end
+  end
+  add(type(data.search) == "table" and data.search.nodes, false)  -- waiting on you: before your own
+  add(type(data.viewer) == "table" and type(data.viewer.pullRequests) == "table" and data.viewer.pullRequests.nodes, true)
+  local rank = { fail = 1, run = 2, ok = 3, none = 4 }
+  for i, pr in ipairs(out) do pr.order = i end
+  table.sort(out, function(a, b)
+    if a.mine ~= b.mine then return not a.mine end
+    if rank[a.checks] ~= rank[b.checks] then return rank[a.checks] < rank[b.checks] end
+    return a.order < b.order
+  end)
+  while #out > core.PR_MAX do table.remove(out) end
+  for _, pr in ipairs(out) do pr.order = nil end
+  return out
+end
+
+--- Why a pr command cannot run against the cached list, or nil and the PR. `n` names a PR the radar knows
+--- (the knob never sends a URL); `action`: open | rerun (rerun needs a failed run).
+function core.prProblem(message, prs)
+  if message.action ~= "open" and message.action ~= "rerun" then return "pr needs action open|rerun" end
+  if type(message.n) ~= "string" then return "pr needs n" end
+  for _, pr in ipairs(prs or {}) do
+    if pr.key == message.n then
+      if message.action == "rerun" and #pr.failedRuns == 0 then return "no failed run to re-run" end
+      if message.action == "open" and not (type(pr.url) == "string" and pr.url:match("^https://github%.com/")) then
+        return "no GitHub URL"
+      end
+      return nil, pr
+    end
+  end
+  return "unknown PR"
 end
 
 --- The agent with `id` and its worktree, or nil.

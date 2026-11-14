@@ -334,7 +334,12 @@ test("macProblem: known actions; volume takes a step within ±100", function()
   eq(core.macProblem({ action = "volume", value = "4" }), nil)
   eq(core.macProblem({ action = "volume" }), "volume needs a value step from -100 to 100")
   eq(core.macProblem({ action = "volume", value = 101 }), "volume needs a value step from -100 to 100")
-  eq(core.macProblem({ action = "shutdown" }), "mac needs action volume|mute|play|next|prev")
+  eq(core.macProblem({ action = "shutdown" }), "mac needs action volume|mute|play|next|prev|inmute|involume")
+  eq(core.macProblem({ action = "inmute" }), nil)
+  eq(core.macProblem({ action = "inmute", value = true }), nil)
+  eq(core.macProblem({ action = "inmute", value = "yes" }), "inmute takes a boolean value")
+  eq(core.macProblem({ action = "involume", value = -3 }), nil)
+  eq(core.macProblem({ action = "involume" }), "volume needs a value step from -100 to 100")
 end)
 
 test("nowPlayingOf: source and title; a browser tab loses its count and the site name", function()
@@ -472,6 +477,55 @@ test("lanURLs: private IPv4 on en* interfaces, the primary first; loopback, VPN,
   eq(core.lanURLs(interfaces, "en7", 7353)[1], "http://10.0.0.5:7353")
   eq(#core.lanURLs({ en0 = { "172.20.1.4" }, en2 = { "172.32.0.1" } }, nil, 7353), 1)
   eq(#core.lanURLs({}, nil, 7353), 0)
+end)
+
+-- prompts ------------------------------------------------------------------------------------
+
+test("promptsOf: trims to the limits, defaults when unusable", function()
+  eq(core.promptsOf(nil), core.DEFAULT_PROMPTS)
+  eq(core.promptsOf({ { name = "x", prompts = { "", "  " } } }), core.DEFAULT_PROMPTS)
+  local long = string.rep("я", core.PROMPT_MAX + 1)
+  local out = core.promptsOf({ { name = "A", prompts = { "так", 3, long, "ні" } }, { name = 5, prompts = { "x" } } })
+  eq(#out, 1); eq(out[1].name, "A"); eq(#out[1].prompts, 2); eq(out[1].prompts[2], "ні")
+end)
+
+-- PR radar -----------------------------------------------------------------------------------
+
+local function prNode(repo, number, state, extra)
+  local node = { number = number, title = "t" .. number, url = "https://github.com/" .. repo .. "/pull/" .. number,
+    isDraft = false, reviewDecision = nil, repository = { nameWithOwner = repo },
+    commits = { nodes = { { commit = { statusCheckRollup = state and { state = state } or nil, checkSuites = { nodes = {} } } } } } }
+  for k, v in pairs(extra or {}) do node[k] = v end
+  return node
+end
+
+test("prsOf: review requests first, failing before green, no checks is none", function()
+  local failing = prNode("o/a", 2, "FAILURE")
+  failing.commits.nodes[1].commit.checkSuites.nodes = { { conclusion = "FAILURE", workflowRun = { databaseId = 77 } },
+    { conclusion = "SUCCESS", workflowRun = { databaseId = 78 } } }
+  local doc = { data = {
+    viewer = { pullRequests = { nodes = { prNode("o/a", 1, "SUCCESS"), failing, prNode("o/b", 3, nil), prNode("o/c", 9, "PENDING") } } },
+    search = { nodes = { prNode("o/z", 5, "SUCCESS", { reviewDecision = "APPROVED" }), {} } },
+  } }
+  local prs = core.prsOf(doc)
+  eq(#prs, 5)
+  eq(prs[1].key, "o/z#5"); eq(prs[1].mine, false); eq(prs[1].review, "approved")
+  eq(prs[2].key, "o/a#2"); eq(prs[2].checks, "fail"); eq(#prs[2].failedRuns, 1); eq(prs[2].failedRuns[1], 77)
+  eq(prs[3].checks, "run"); eq(prs[4].key, "o/a#1"); eq(prs[5].checks, "none")
+  eq(core.prsOf({ errors = {} }), nil)
+end)
+
+test("prProblem: only PRs the radar knows; rerun needs a failed run", function()
+  local prs = { { key = "o/a#2", url = "https://github.com/o/a/pull/2", failedRuns = { 77 } },
+    { key = "o/a#1", url = "https://evil.example/x", failedRuns = {} } }
+  local problem, pr = core.prProblem({ action = "open", n = "o/a#2" }, prs)
+  eq(problem, nil); eq(pr.key, "o/a#2")
+  eq(core.prProblem({ action = "rerun", n = "o/a#2" }, prs), nil)
+  eq(core.prProblem({ action = "rerun", n = "o/a#1" }, prs), "no failed run to re-run")
+  eq(core.prProblem({ action = "open", n = "o/a#1" }, prs), "no GitHub URL")
+  eq(core.prProblem({ action = "open", n = "x/y#1" }, prs), "unknown PR")
+  eq(core.prProblem({ action = "merge", n = "o/a#2" }, prs), "pr needs action open|rerun")
+  eq(core.commandRefusal("pr", "ws"), "pr needs the bearer token: use POST /api/cmd")
 end)
 
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))

@@ -171,6 +171,9 @@ static void apply_mac(const String &body)
   mac.week_severity = doc["csv"] | "";
   mac.models = doc["cmod"] | "";
   mac.breakdown = doc["cbd"] | "";
+  mac.mic = doc["mi"] | "";
+  mac.mic_muted = doc["mm"] | false;
+  mac.mic_volume = doc["mv"] | -1;
   mac.at = millis();
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.mac = mac;
@@ -194,8 +197,50 @@ void tz_persist()
   prefs.end();
 }
 
+static void apply_prompts(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  std::vector<PromptGroup> groups;
+  for (JsonArray g : doc["g"].as<JsonArray>()) {
+    PromptGroup group;
+    group.name = g[0] | "";
+    for (JsonVariant p : g[1].as<JsonArray>()) group.prompts.push_back(p | "");
+    if (group.prompts.size()) groups.push_back(group);
+  }
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  shared.prompts = groups;
+  shared.prompts_version++;
+  xSemaphoreGive(shared_mux);
+}
+
+static void apply_prs(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  std::vector<PrItem> prs;
+  for (JsonArray p : doc["p"].as<JsonArray>()) {
+    PrItem pr;
+    pr.key = p[0] | "";
+    pr.title = p[1] | "";
+    pr.checks = p[2] | "none";
+    pr.mine = p[3] | true;
+    pr.review = p[4] | "";
+    pr.rerun = p[5] | false;
+    prs.push_back(pr);
+  }
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  shared.prs = prs;
+  shared.prs_error = doc["e"] | "";
+  shared.prs_loaded = doc["l"] | false;
+  shared.prs_version++;
+  xSemaphoreGive(shared_mux);
+}
+
 static void apply_transcript(const String &body);
 static void apply_day(const String &body);
+static void apply_prompts(const String &body);
+static void apply_prs(const String &body);
 
 void handle_line(const String &line, LinkKind via)
 {
@@ -220,6 +265,10 @@ void handle_line(const String &line, LinkKind via)
     apply_transcript(body);
   } else if (kind == 'Y') {
     apply_day(body);
+  } else if (kind == 'P') {
+    apply_prompts(body);
+  } else if (kind == 'R') {
+    apply_prs(body);
   } else if (kind == 'T' && via == LINK_USB) {
     ui_test_enqueue(body);  // test input over the cable only: it needs physical access
   } else if (kind == 'A') {

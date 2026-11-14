@@ -436,6 +436,22 @@ std::vector<Agent> deck_all_agents()
   return out;
 }
 
+std::vector<DeckTarget> deck_chat_targets()
+{
+  std::vector<DeckTarget> out;
+  if (index_shown < (int)worktrees.size()) {
+    const Worktree &w = worktrees[index_shown];
+    const Agent *a = shown_agent(w);
+    if (a && a->chat) out.push_back({ui_title(w), a->id, a->bucket});
+  }
+  for (const Worktree &w : all_worktrees) {
+    for (const Agent &a : w.agents) {
+      if (a.chat && (out.empty() || out[0].agent != a.id)) out.push_back({ui_title(w), a.id, a.bucket});
+    }
+  }
+  return out;
+}
+
 void deck_open_agent(const String &worktree, const String &agent)
 {
   hub_open(&app_deck);
@@ -676,6 +692,7 @@ static void run_test(const String &line)
   }
   else if (verb == "mic") mic_test(arg.length() ? arg.toInt() : 3);
   else if (verb == "dictate") Serial.println(dictate_report());
+  else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
@@ -729,6 +746,9 @@ static void loop_tick(lv_timer_t *)
   focus_tick();
   usage_tick();
   day_tick();
+  prompts_tick();
+  micmute_tick();
+  prs_tick();
   dictate_tick();
   tz_persist();
   hub_tick();
@@ -811,6 +831,9 @@ extern "C" void ui_init(void)
   focus_create();
   usage_create();
   day_create();
+  prompts_create();
+  micmute_create();
+  prs_create();
   dictate_create();
   banner_create();
   hub_create();  // the hub covers the apps, and the knob boots into it

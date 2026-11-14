@@ -60,6 +60,9 @@ struct MacStatus {
   String focus_error;  // the bridge could not run the Focus Shortcut
   String week_severity;     // normal / warning / critical
   String models, breakdown;  // "Fable 0" · "Claude Code 41|Cowork 59" (name, space, percent; | between)
+  String mic;               // the Mac's microphone (Mic Mute); "" when not known
+  bool mic_muted = false;
+  int mic_volume = -1;      // its input level, %
   uint32_t at = 0;  // millis() of the last M line; 0: never
 };
 
@@ -75,6 +78,23 @@ struct DayRow {
 struct DayData {
   int now = -1, waited = 0, worked = 0;
   std::vector<DayRow> rows;
+};
+
+// GET /api/prompts via the relay's P line: the Prompt Palette.
+struct PromptGroup {
+  String name;
+  std::vector<String> prompts;
+};
+
+// GET /api/prs via the relay's R line: PR Radar.
+struct PrItem {
+  String key, title, checks, review;  // "owner/repo#12" · ok|fail|run|none · approved|changes|""
+  bool mine = true, rerun = false;    // mine: authored (else a review request) · rerun: has a failed run
+};
+
+// The Prompt Palette's target: a chat agent and its worktree's title.
+struct DeckTarget {
+  String title, agent, bucket;
 };
 
 struct Shared {
@@ -93,6 +113,12 @@ struct Shared {
   uint32_t transcript_version = 0;
   DayData day;
   uint32_t day_version = 0;
+  std::vector<PromptGroup> prompts;
+  uint32_t prompts_version = 0;
+  std::vector<PrItem> prs;
+  String prs_error;
+  bool prs_loaded = false;
+  uint32_t prs_version = 0;
 };
 
 extern SemaphoreHandle_t shared_mux;
@@ -190,7 +216,8 @@ struct App {
   void (*hold)();
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
-extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day;
+extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day,
+    app_prompts, app_mic, app_prs;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -247,6 +274,24 @@ void day_create();
 void day_tick();
 String day_report();
 
+// app_prompts.cpp
+void prompts_create();
+void prompts_tick();
+String prompts_report();
+void prompts_test_target(const String &needle);  // tests: only the chat agent whose id has `needle`, else none
+
+// app_mic.cpp
+lv_obj_t *mic_glyph(lv_obj_t *parent, int size);  // a drawn microphone (the hub's badge too)
+void mic_glyph_set(lv_obj_t *glyph, uint32_t color, bool slashed);
+void micmute_create();
+void micmute_tick();
+String micmute_report();
+
+// app_prs.cpp
+void prs_create();
+void prs_tick();
+String prs_report();
+
 // app_clock.cpp
 void clock_create();
 void clock_tick();
@@ -298,7 +343,8 @@ void banner_tick();
 void ui_test_enqueue(const String &line);  // "T …" lines over USB: drive the UI from the Mac (tests)
 void ui_after_send(const String &agent_id);
 void deck_open_agent(const String &worktree, const String &agent);  // the banner's tap
-std::vector<Agent> deck_all_agents();  // every agent the bridge knows, for the hub's orbits  // Apex: back to the main page, turned to the next waiting agent
+std::vector<Agent> deck_all_agents();
+std::vector<DeckTarget> deck_chat_targets();  // every chat agent, the one on screen in Claude first  // every agent the bridge knows, for the hub's orbits  // Apex: back to the main page, turned to the next waiting agent
 void ui_close_pages();
 String ui_title(const Worktree &w);
 String ui_meta(const Worktree &w, const Agent *a);

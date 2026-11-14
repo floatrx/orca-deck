@@ -10,12 +10,18 @@ Lines on the wire (one JSON object per line, UTF-8):
                                            "now" (also in S) sets the knob's clock: Wi-Fi NTP is off on BLE
   relay → knob   D {...AgentDetail...}     the agent the knob's agent page shows (protocol.md § AgentDetail)
   relay → knob   A {"cmd", "ok", "note"}   the bridge's answer to a command
-  relay → knob   M {volume, muted, output, source, title, battery, charging, cpu, tz, cs, cw, csr, cwr}
-                                           cs / cw: Claude 5 h / week limit %; csr / cwr: minutes to their reset   the Mac (GET /api/mac) for Clock and the Mac
-                                           remote, plus tz (the Mac's UTC offset, minutes); every MAC_S, on change
+  relay → knob   M {volume, muted, output, source, title, battery, charging, cpu, tz, cs, cw, csr, cwr, mi, mm, mv}
+                                           the Mac (GET /api/mac) for Clock and the Mac remote, plus tz (the Mac's UTC
+                                           offset, minutes); cs / cw: Claude 5 h / week limit %; csr / cwr: minutes to
+                                           their reset; mi / mm / mv: the microphone's name, muted, input level %;
+                                           every MAC_S, on change
   relay → knob   X {"text"} | {"error"}    the transcript of a dictation (V lines)
   relay → knob   Y {now, wa, wo, r:[[name, [[from, to, 0|1], …]], …]}   today's Agent Day Timeline (GET /api/day):
                                            minutes of the day; 0 working, 1 needs you; every DAY_S, on change
+  relay → knob   P {g:[[name, [prompt, …]], …]}   the Prompt Palette (GET /api/prompts); every PROMPTS_S, on change
+  relay → knob   R {e, l, p:[[key, title, checks, mine, review, rerun], …]}   PR Radar (GET /api/prs): checks
+                                           ok|fail|run|none, review approved|changes|""; e: the bridge's gh error,
+                                           l: loaded once; every PRS_S, on change
   knob → relay   V {"start":true} · V <base64 IMA-ADPCM, 16 kHz mono> · V {"end":true} | {"cancel":true}
                                            dictation audio; on end the relay asks OpenAI (gpt-4o-transcribe, key in
                                            ~/.config/orca-deck/openai.key) and answers with X
@@ -56,6 +62,8 @@ FULL_STATE_S = 30.0  # a full S even without a change, in case a line was lost
 TEXT_CHARS = 100
 MESSAGE_CHARS = 1200
 MAC_S = 2.0
+PROMPTS_S = 30.0  # GET /api/prompts: the file is read on every call, so an edit shows up within this
+PRS_S = 30.0  # GET /api/prs: the bridge asks GitHub every 60 s
 DAY_S = 60.0  # GET /api/day: the timeline moves a minute at a time  # GET /api/mac: CPU is measured between two calls, so not much faster
 
 
@@ -191,8 +199,7 @@ class Link:
         self.last_detail = None
         self.last_state = None
         self.last_full = 0.0
-        self.last_mac = None
-        self.last_day = None
+        self.last_extra = {}     # the last M / Y / P / R line sent, by letter: each goes again only on change
         self.voice = None        # dictation audio (ADPCM bytes) between V start and V end
 
     def send(self, data):
@@ -241,7 +248,8 @@ class Link:
             self.last_detail = None
             return
         if command.get("cmd") == "hello":  # a fresh BLE connection: send everything again at once
-            self.last_state = self.last_detail = self.last_mac = self.last_day = None
+            self.last_state = self.last_detail = None
+            self.last_extra = {}
             return
         try:
             ack = bridge("POST", "/api/cmd", command)
@@ -250,15 +258,13 @@ class Link:
         log(f"{self.name}: cmd {command.get('cmd')} → ok={ack.get('ok')} {ack.get('note') or ''}")
         self.send(encode("A", ack))
 
-    def tick(self, state_line, mac_line=None, day_line=None):
-        """Called once per poll with the encoded state (and the Mac / day lines, when there are)."""
+    def tick(self, state_line, extra_lines=()):
+        """Called once per poll with the encoded state and the extra lines (M, Y, P, R) there are."""
         now = time.time()
-        if day_line and day_line != self.last_day:
-            self.send(day_line)
-            self.last_day = day_line
-        if mac_line and mac_line != self.last_mac:
-            self.send(mac_line)
-            self.last_mac = mac_line
+        for line in extra_lines:
+            if line and line != self.last_extra.get(line[:1]):
+                self.send(line)
+                self.last_extra[line[:1]] = line
         if state_line != self.last_state or now - self.last_full >= FULL_STATE_S:
             # "now" goes in after the comparison: the clock alone must not count as a change.
             self.send(state_line[:-2] + f',"now":{int(now * 1000)}}}\n'.encode())
@@ -352,6 +358,8 @@ def main():
     last_scan = 0.0
     mac_line, mac_at = None, 0.0
     day_line, day_at = None, -DAY_S
+    prompts_line, prompts_at = None, -PROMPTS_S
+    prs_line, prs_at = None, -PRS_S
     while True:
         if args.stdio and not links[0].alive:
             sys.exit(0)  # the app closed our stdin: it restarts us with the BLE link
@@ -393,6 +401,10 @@ def main():
                     left = until_minutes(claude.get(key))
                     if left is not None:
                         payload[field] = left
+                payload["mi"] = (mac.get("mic") or "")[:40]  # the Mic Mute app
+                payload["mm"] = bool(mac.get("micMuted"))
+                if mac.get("micVolume") is not None:
+                    payload["mv"] = mac["micVolume"]
                 payload["tz"] = time.localtime().tm_gmtoff // 60  # the knob keeps UTC; its Clock shows the Mac's time
                 mac_line = encode("M", payload)
             except Exception as error:  # an older bridge without /api/mac: the knob's Clock shows the time only
@@ -408,9 +420,27 @@ def main():
             except Exception as error:  # an older bridge: no timeline
                 log(f"day: {error}")
                 day_line = None
+        if links and time.time() - prompts_at >= PROMPTS_S:
+            prompts_at = time.time()
+            try:
+                groups = bridge("GET", "/api/prompts").get("groups") or []
+                prompts_line = encode("P", {"g": [[g["name"][:24], [p[:200] for p in g["prompts"][:12]]] for g in groups[:6]]})
+            except Exception as error:  # an older bridge: no palette
+                log(f"prompts: {error}")
+                prompts_line = None
+        if links and time.time() - prs_at >= PRS_S:
+            prs_at = time.time()
+            try:
+                radar = bridge("GET", "/api/prs")
+                prs_line = encode("R", {"e": (radar.get("error") or "")[:60], "l": bool(radar.get("loaded")), "p": [
+                    [p["key"][:60], p["title"][:60], p["checks"], bool(p["mine"]), p.get("review") or "", bool(p["rerun"])]
+                    for p in (radar["prs"] if isinstance(radar.get("prs"), list) else [])[:10]]})
+            except Exception as error:  # an older bridge: no radar
+                log(f"prs: {error}")
+                prs_line = None
         for link in list(links):
             try:
-                link.tick(state_line, mac_line, day_line)
+                link.tick(state_line, (mac_line, day_line, prompts_line, prs_line))
             except Exception as error:  # a write failed: the cable is out
                 log(f"{link.name}: {error}")
                 link.alive = False

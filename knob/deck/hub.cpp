@@ -6,7 +6,8 @@
 #include <math.h>
 #include <time.h>
 
-static const App *const APPS[] = {&app_deck, &app_usage, &app_day, &app_focus, &app_timer, &app_mac, &app_jog, &app_wheel, &app_clock, &app_settings};
+static const App *const APPS[] = {&app_deck, &app_prompts, &app_prs, &app_usage, &app_day, &app_focus, &app_mic, &app_timer,
+                                  &app_mac, &app_jog, &app_wheel, &app_clock, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -14,6 +15,8 @@ static lv_obj_t *page, *link_label;
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
 // The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
 static lv_obj_t *hands[SLOTS][2];
+// The Mic's badge is a drawn microphone (no font has one), slashed while the Mac's mic is muted.
+static lv_obj_t *mic_badge[SLOTS];
 // The Claude row's badge is Clawd himself on black, acting out the loudest agent state, as on the screensaver
 // (user, 2026-11-14). One small canvas per slot; drawn ~12 fps while the hub is on screen.
 static lv_obj_t *clawd_canvas[SLOTS];
@@ -91,8 +94,16 @@ static void refresh()
     bool claude = app == &app_deck;
     lv_obj_set_style_bg_color(badges[slot], lv_color_hex(claude ? 0x000000 : app->color), 0);
     clawd_badge(slot, claude);
-    set_text(icons[slot], app == &app_clock || claude ? "" : app->icon);
+    bool mic = app == &app_mic;
+    set_text(icons[slot], app == &app_clock || claude || mic ? "" : app->icon);
     clock_face(slot, app == &app_clock);
+    if (mic && linked) {
+      xSemaphoreTake(shared_mux, portMAX_DELAY);
+      bool muted = shared.mac.mic_muted;
+      xSemaphoreGive(shared_mux);
+      mic_glyph_set(mic_badge[slot], C_BG, muted);
+    }
+    mic ? lv_obj_clear_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN);
     set_text(names[slot], app->name);
     set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
@@ -301,6 +312,9 @@ String hub_report()
   if (current == &app_focus) return "Focus " + focus_report();
   if (current == &app_usage) return "Usage " + usage_report();
   if (current == &app_day) return "Day " + day_report();
+  if (current == &app_prompts) return "Prompts " + prompts_report();
+  if (current == &app_mic) return "Mic " + micmute_report();
+  if (current == &app_prs) return "PRs " + prs_report();
   return current ? String(current->name) : (booting ? "hub(boot)" : "hub") + globe_report();
 }
 
@@ -392,6 +406,10 @@ void hub_create()
       lv_obj_set_style_line_rounded(hand, true, 0);
       lv_obj_add_flag(hand, LV_OBJ_FLAG_HIDDEN);
     }
+    mic_badge[slot] = mic_glyph(badge, BADGE[slot] * 7 / 10);
+    lv_obj_center(mic_badge[slot]);
+    mic_glyph_set(mic_badge[slot], C_BG, false);
+    lv_obj_add_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *icon = icons[slot] = lv_label_create(badge);
     lv_obj_set_style_text_font(icon, mid ? &lv_font_montserrat_28 : &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(icon, lv_color_hex(C_BG), 0);

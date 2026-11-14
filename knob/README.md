@@ -23,9 +23,12 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 | App | What it is for | Crown · tap · hold · swipe | Data |
 |---|---|---|---|
 | **Claude** | the agents: who works, who needs you, their Next prompts | workspace · show it in Orca · dictate · ← agent page / → its settings / ↑ next agent | bridge state |
+| **Prompts** | stock prompts typed into a Claude chat in one tap | the drum · send · next chat agent · ←/→ group | `prompts.json` |
+| **PRs** | your open PRs and review requests, coloured by checks | the PR · open in browser · re-run failed (armed, tap confirms) | bridge `gh` |
 | **Usage** | Claude's plan limits | — | bridge `oauth/usage` |
 | **Day** | today on a 24 h dial: who worked, who waited on you | a cursor, 15 min a detent | bridge day log |
 | **Focus** | one tap into deep work: Mac Focus + Pomodoro + quiet banners | — · on / off | Shortcuts |
+| **Mic** | the Mac's microphone for calls in any app | input level · mute / unmute · the other way while held | bridge `/api/mac` |
 | **Timer** | timer / Pomodoro, counts in the background | minutes · start/pause · reset · double tap: Pomodoro | knob only |
 | **Mac** | volume and media keys, what plays | volume · play/pause · mute · ←/→ track | bridge `/api/mac` |
 | **Jog** | the crown as a precise wheel for the Mac's front app | act · reset · — · ←/→ mode | bridge `jog` |
@@ -55,6 +58,15 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   `~/.config/orca-deck/openai.key`, mode 600, never in the repo) and the text **goes to the agent at once**, shown as
   SENT for 1.2 s. A swipe while listening cancels — the only way not to send. Audio streams as IMA ADPCM (8 KB/s)
   while you speak, so the text is back ~1 s after the tap. The transcript never goes to a log.
+- **Prompts** — a barrel drum: the prompt in front is bold in a band, its neighbours roll away above and below. The
+  target is the agent on screen in Claude (a hold steps through the other chat agents); after a send it shows SENT
+  and moves on as Claude does (the next agent waiting on you). Prompts: `~/.config/orca-deck/prompts.json`,
+  `[{"name": "Робота", "prompts": ["продовжуй", …]}, …]`, read by the bridge on every call (the knob has it within
+  30 s); without it, three default groups (Робота, Перевірка, Відповіді).
+- **PRs** — one arc a PR round the rim: red failing, blue running (pulsing), green passed, grey no checks; the one
+  in the middle is thick. Review requests first, then yours. A tap opens it on the Mac; a hold arms a re-run of its
+  failed jobs (4 s, a tap confirms). A running PR that lands banners in any app ("core#210 checks failed"). From
+  one `gh api graphql` in the bridge every 60 s — gh's own login.
 - **Usage** — the week's dial in its severity's colour (blue / orange warning / red critical), % and time to the
   reset, an inner dial for the 5 h window (or a model limit such as Fable), and a stacked bar of what the week went
   on (Code / Cowork / Chats). From the bridge's `oauth/usage` call, the source of Orca's status bar.
@@ -64,6 +76,8 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 - **Focus** — needs two Shortcuts, made once: "Knob Focus On" (*Set Focus → Do Not Disturb → On, until turned
   off*) and "Knob Focus Off" (*Off*). While on, a fresh done neither buzzes nor banners (needs-you still does);
   the end of the Pomodoro's break turns it off. A missing Shortcut shows in red.
+- **Mic** — red and still while muted, green and breathing while live; a drawn microphone (slashed when muted)
+  also on its hub badge. A hold flips it while the finger stays: push-to-talk when muted, a cough button when live.
 - **Timer** — the end buzzes 3× and banners wherever you are.
 - **Mac** — what plays comes from Music, Spotify or a YouTube tab in Chrome / Safari (macOS 15+ closed
   MediaRemote; macOS asks once to let Hammerspoon control the browser).
@@ -142,6 +156,7 @@ Verbs:
 | `select <worktree id>\|<agent id>` | the Claude page's choice, without `go` |
 | `alert` · `tap banner` | the banner for the agent on screen / a tap on it |
 | `dictate` · `subtitle` | the dictation screen's state / the Claude row and the limits |
+| `ptarget <id part>` | pin Prompts to the chat agent whose id has it — no match sends nowhere (scratch-session tests) |
 | `saver off\|on\|now` | keep the screensaver out of a test (until the next reboot) / show it |
 | `haptics [level]` | the level and the DRV2605 writes / set the level (saved) |
 | `mic <s>` | record and stream the samples as `MIC` lines (`.work` scratch `miccap.py` makes a WAV) |

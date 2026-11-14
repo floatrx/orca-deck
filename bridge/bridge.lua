@@ -606,6 +606,13 @@ local function macStatus()
     out.muted = device:outputMuted() or device:muted() or false
     out.output = device:name()
   end
+  local mic = hs.audiodevice.defaultInputDevice()
+  if mic then  -- the knob's Mic Mute
+    out.micMuted = mic:inputMuted() or false
+    local level = mic:inputVolume()
+    out.micVolume = level and math.floor(level + 0.5) or nil
+    out.mic = mic:name()
+  end
   out.battery = hs.battery.percentage() and math.floor(hs.battery.percentage() + 0.5) or nil
   out.charging = hs.battery.isCharging() or hs.battery.powerSource() == "AC Power"
   local ticks = hs.host.cpuUsageTicks()
@@ -680,6 +687,20 @@ local function macCommand(message)
     hs.eventtap.event.newSystemKeyEvent(key, false):post()
     return nil
   end
+  if message.action == "inmute" or message.action == "involume" then
+    local mic = hs.audiodevice.defaultInputDevice()
+    if not mic then return "no microphone" end
+    if message.action == "inmute" then
+      local want = message.value
+      if want == nil then want = not mic:inputMuted() end
+      if not mic:setInputMuted(want) then return "the microphone cannot mute" end
+      trail("mic " .. (want and "muted" or "live"))
+    else
+      local level = math.max(0, math.min(100, (mic:inputVolume() or 0) + tonumber(message.value)))
+      mic:setInputVolume(level)
+    end
+    return nil
+  end
   local device = hs.audiodevice.defaultOutputDevice()
   if not device then return "no output device" end
   if message.action == "mute" then
@@ -689,6 +710,72 @@ local function macCommand(message)
     local volume = math.max(0, math.min(100, now + tonumber(message.value)))
     device:setOutputVolume(volume)
     if volume > 0 and device:outputMuted() then device:setOutputMuted(false) end
+  end
+  return nil
+end
+
+-- The knob's Prompt Palette: ~/.config/orca-deck/prompts.json, read on every GET (the relay asks every 30 s), so an
+-- edit shows up without a reload; the defaults in core.lua when the file is missing or broken.
+local PROMPTS_FILE = os.getenv("HOME") .. "/.config/orca-deck/prompts.json"
+
+local function promptGroups()
+  local text = readFile(PROMPTS_FILE)
+  local ok, doc = pcall(hs.json.decode, text or "")
+  return core.promptsOf(ok and doc or nil)
+end
+
+-- PR Radar: the user's open PRs and their review requests, from `gh api graphql` (gh's own login), every 60 s while
+-- /api/prs is read. Titles and check states only go to the knob; a tap opens a PR the radar itself listed.
+local GH = "/opt/homebrew/bin/gh"
+local PRS_SECONDS = 60
+
+local function refreshPrs()
+  if deckBridge.prsBusy then return end
+  deckBridge.prsBusy = true
+  local task = hs.task.new(GH, function(code, out, err)
+    deckBridge.prsBusy = false
+    local ok, doc = pcall(hs.json.decode, code == 0 and out or "")
+    local prs = ok and core.prsOf(doc) or nil
+    if prs then
+      deckBridge.prs, deckBridge.prsError = prs, nil
+    else
+      deckBridge.prsError = code ~= 0 and ("gh: " .. ((err or ""):match("[^\n]+") or ("exit " .. code))) or "gh: unexpected answer"
+    end
+    trail("prs: " .. (deckBridge.prsError or (#prs .. " open")))
+  end, { "api", "graphql", "-f", "query=" .. core.PR_QUERY })
+  if not task or not task:start() then  -- no gh at that path: say so instead of "asking GitHub…" forever
+    deckBridge.prsBusy = false
+    deckBridge.prsError = "gh not found at " .. GH
+  end
+end
+
+local function prsStatus()
+  local now = hs.timer.secondsSinceEpoch()
+  if now - (deckBridge.prsAt or 0) >= PRS_SECONDS then
+    deckBridge.prsAt = now
+    refreshPrs()
+  end
+  local out = {}
+  for _, pr in ipairs(deckBridge.prs or {}) do
+    out[#out + 1] = { key = pr.key, repo = pr.repo, number = pr.number, title = pr.title, checks = pr.checks,
+      mine = pr.mine, draft = pr.draft, review = pr.review, rerun = #pr.failedRuns > 0 }
+  end
+  return { v = core.PROTOCOL, at = nowMs(), prs = out, error = deckBridge.prsError, loaded = deckBridge.prs ~= nil }
+end
+
+--- cmd "pr": open a PR the radar listed, or re-run its failed workflow runs (`gh run rerun --failed`).
+local function prCommand(message)
+  local problem, pr = core.prProblem(message, deckBridge.prs)
+  if problem then return problem end
+  if message.action == "open" then
+    hs.urlevent.openURL(pr.url)
+    return nil
+  end
+  for _, run in ipairs(pr.failedRuns) do
+    hs.task.new(GH, function(code, _, err)
+      trail(string.format("pr rerun %s run %d → %s", pr.key, run, code == 0 and "ok" or ((err or ""):match("[^\n]+") or ("exit " .. code))))
+      deckBridge.prsAt = 0  -- the next GET refreshes: the checks are running again
+    end, { "run", "rerun", tostring(run), "--failed", "-R", pr.repo }):start()
   end
   return nil
 end
@@ -729,6 +816,8 @@ local function run(message, via)
     return ack(cmd, jogCommand(message))
   elseif cmd == "focus" then
     return ack(cmd, focusCommand(message))
+  elseif cmd == "pr" then
+    return ack(cmd, prCommand(message))
   end
   return ack(tostring(cmd), "unknown command")
 end
@@ -776,6 +865,10 @@ local function onApi(method, route, query, headers, body)
     return json(200, core.dayView(deckBridge.day, minute, 6))
   elseif method == "GET" and route == "/api/mac" then
     return json(200, macStatus())
+  elseif method == "GET" and route == "/api/prompts" then
+    return json(200, { v = core.PROTOCOL, groups = promptGroups() })
+  elseif method == "GET" and route == "/api/prs" then
+    return json(200, prsStatus())
   elseif method == "GET" and route == "/api/agent" then
     local detail = agentDetail(query.id)
     if not detail then return json(404, { error = "unknown agent" }) end
