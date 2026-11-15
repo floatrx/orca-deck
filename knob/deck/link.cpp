@@ -451,6 +451,8 @@ static void dispatch_task(void *)
       if (!shared.voice.empty()) shared.voice.pop_front();
       xSemaphoreGive(shared_mux);
     }
+    static bool boot_told = false;  // once a boot, to the relay's log (any non-C line is logged there)
+    if (!boot_told && link == LINK_BLE) boot_told = ble_send_line("L " + boot_note + " · heap " + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
     String detail = detail_request();
     if (detail.length()) {
       if (link == LINK_BLE) ble_send_line("C " + detail);

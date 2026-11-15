@@ -6,7 +6,7 @@
 #include <math.h>
 #include <time.h>
 
-static const App *const APPS[] = {&app_deck, &app_prompts, &app_prs, &app_usage, &app_day, &app_focus, &app_mic, &app_timer,
+static const App *const APPS[] = {&app_deck, &app_usage, &app_prompts, &app_prs, &app_day, &app_focus, &app_mic, &app_timer,
                                   &app_mac, &app_jog, &app_wheel, &app_clock, &app_wifi, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 

@@ -15,7 +15,6 @@
 //           the envelope Orca's renderer builds (fingerprint method "agentSession.respondTo:question").
 // Every failure prints {"error": …} and exits 1. The text is read from stdin so it never shows up in `ps`.
 const OUT = "/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out";
-const { RuntimeClient, getDefaultUserDataPath } = require(OUT + "/cli/runtime-client.js");
 // Orca moves its internals between releases (2026-11-12: shared/ → shared/agent-session/{requests,lifecycle}/):
 // take the first path that exists.
 function requireFirst(paths) {
@@ -28,6 +27,10 @@ function requireFirst(paths) {
   }
   throw new Error("Orca module not found: " + paths.join(" | "));
 }
+// Orca 1.4.259 (2026-11-14) split cli/runtime-client.js into cli/runtime/{client,metadata}.js: every send failed
+// with "exit 1" (MODULE_NOT_FOUND) until this looked in both places.
+const { RuntimeClient } = requireFirst(["/cli/runtime/client.js", "/cli/runtime-client.js"]);
+const { getDefaultUserDataPath } = requireFirst(["/cli/runtime/metadata.js", "/cli/runtime-client.js"]);
 const send = requireFirst(["/shared/agent-session/requests/structured-agent-session-send-mutation.js",
   "/shared/structured-agent-session-send-mutation.js"]);
 const mutation = requireFirst(["/shared/agent-session/lifecycle/structured-agent-session-mutation.js",

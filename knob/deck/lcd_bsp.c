@@ -280,7 +280,9 @@ void lcd_lvgl_Init(void)
 
   lvgl_mux = xSemaphoreCreateMutex(); //mutex semaphores
   assert(lvgl_mux);
-  xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
+  // Core 1 (2026-11-15): unpinned, the UI also ran on core 0 beside BLE and Wi-Fi, starved IDLE0 and the task
+  // watchdog rebooted the knob ("TASK WATCHDOG", the core dump's running task: LVGL). Core 0 is the radio's.
+  xTaskCreatePinnedToCore(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL, 1);
   if (example_lvgl_lock(-1)) 
   {   
     ui_init();
@@ -306,6 +308,8 @@ static void example_lvgl_unlock(void)
   assert(lvgl_mux && "bsp_display_start must be called first");
   xSemaphoreGive(lvgl_mux);
 }
+void ui_frame_time(uint32_t ms);  // ui.cpp: the slowest UI pass, kept for the next boot's note
+
 static void example_lvgl_port_task(void *arg)
 {
   uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
@@ -313,7 +317,9 @@ static void example_lvgl_port_task(void *arg)
   {
     if (example_lvgl_lock(-1))
     {
+      uint32_t started = xTaskGetTickCount();
       task_delay_ms = lv_timer_handler();
+      ui_frame_time(pdTICKS_TO_MS(xTaskGetTickCount() - started));
       
       example_lvgl_unlock();
     }

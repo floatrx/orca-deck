@@ -48,7 +48,7 @@ static void paint_target()
 {
   DeckTarget t;
   if (target(t)) {
-    set_text(target_label, LV_SYMBOL_RIGHT " " + t.title);
+    set_text(target_label, "→ " + t.title);  // "→", not LV_SYMBOL_RIGHT: the deck fonts have no symbol glyphs
     lv_obj_set_style_text_color(target_label, lv_color_hex(color_of(t.bucket)), 0);
   } else {
     set_text(target_label, "no Claude chat open");
@@ -148,7 +148,7 @@ static void tap()
   sent_agent = t.agent;
   sent_text = g->prompts[sel];
   sent_at = millis();
-  set_text(sent_label, "SENT " LV_SYMBOL_RIGHT " " + t.title);
+  set_text(sent_label, "SENT → " + t.title);
   lv_obj_clear_flag(sent_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_bg_color(band, lv_color_hex(0x10301E), 0);
 }

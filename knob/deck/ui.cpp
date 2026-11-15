@@ -813,6 +813,7 @@ static void screenshot()
     Serial.println("SHOT failed: no memory");
     return;
   }
+  Serial.setTxTimeoutMs(200);  // a reader is there (shot.py): wait for it, or the 260 KB drop (boot sets 0)
   Serial.printf("SHOT %d %d\n", (int)snap->header.w, (int)snap->header.h);
   const size_t CHUNK = 3000;  // raw bytes a line
   static unsigned char out[4100];
@@ -824,6 +825,8 @@ static void screenshot()
     Serial.println((const char *)out);
   }
   Serial.println("SHOT END");
+  Serial.flush();
+  Serial.setTxTimeoutMs(0);
   lv_snapshot_free(snap);
 }
 
@@ -887,6 +890,7 @@ static void run_test(const String &line)
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "wifi") Serial.println(wifi_store_report());
   else if (verb == "shot") screenshot();
+  else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));

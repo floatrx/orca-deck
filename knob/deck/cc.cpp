@@ -68,9 +68,14 @@ static void paint()
   String limits = claude_limits(true);
   set_text(top_label, limits.length() ? "Claude " + limits : "");
   String bottom;
-  if (mac.battery >= 0) bottom = "battery " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
-  if (mac.cpu >= 0) bottom += String(bottom.length() ? " · " : "") + "CPU " + String(mac.cpu) + "%";
-  set_text(bottom_label, mac.at ? bottom : "waiting for the Mac…");
+  // Montserrat: it has the battery and bolt symbols (deck_14 drew a box for the bolt), but no "·" or "…" — ASCII only.
+  if (mac.battery >= 0) {
+    const char *level = mac.battery > 80 ? LV_SYMBOL_BATTERY_FULL : mac.battery > 55 ? LV_SYMBOL_BATTERY_3
+                        : mac.battery > 30 ? LV_SYMBOL_BATTERY_2 : mac.battery > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
+    bottom = String(level) + " " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
+  }
+  if (mac.cpu >= 0) bottom += String(bottom.length() ? "    " : "") + "CPU " + String(mac.cpu) + "%";
+  set_text(bottom_label, mac.at ? bottom : "waiting for the Mac...");
 }
 
 void cc_open()
@@ -264,5 +269,5 @@ void cc_create()
   lv_label_set_text(icons[T_BRIGHT], LV_SYMBOL_IMAGE);
 
   top_label = make_label(page, &deck_14, C_DETAIL, -118, 220);
-  bottom_label = make_label(page, &deck_14, C_MUTED, 118, 200);
+  bottom_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 118, 200);
 }

@@ -8,8 +8,20 @@
 // `pane` calls terminal.reveal (one tab, chat or terminal); `worktree` calls worktree.activate (the
 // workspace as it was last left — also for a workspace with no agent). Prints the runtime's answer as
 // one JSON line; {"error": …} and exit code 1 on failure.
-const RUNTIME_CLIENT = "/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out/cli/runtime-client.js";
-const { RuntimeClient, getDefaultUserDataPath } = require(RUNTIME_CLIENT);
+const OUT = "/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out";
+// Orca moves its internals between releases (1.4.259: cli/runtime-client.js → cli/runtime/{client,metadata}.js).
+function requireFirst(paths) {
+  for (const path of paths) {
+    try {
+      return require(OUT + path);
+    } catch (error) {
+      if (error.code !== "MODULE_NOT_FOUND") throw error;
+    }
+  }
+  throw new Error("Orca module not found: " + paths.join(" | "));
+}
+const { RuntimeClient } = requireFirst(["/cli/runtime/client.js", "/cli/runtime-client.js"]);
+const { getDefaultUserDataPath } = requireFirst(["/cli/runtime/metadata.js", "/cli/runtime-client.js"]);
 
 const [mode, worktreeId, tabId, leafId] = process.argv.slice(2);
 

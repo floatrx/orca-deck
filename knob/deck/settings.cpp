@@ -41,7 +41,9 @@ void settings_load()
 }
 
 static void save();
-static bool editing = false;  // the Brightness row is taking the crown
+// A row with several values or a stepper (user, 2026-11-15): a tap gives it the crown, the crown sets the value
+// (live), a second tap saves and gives the crown back to the rows. On / off rows still flip on one tap.
+static bool editing = false;
 
 // Brightness in 5 % steps (1 % under 10 %) (user, 2026-11-14: «більше градацій»; it was 40 / 60 / 80 / 100). The crown sets
 // it, live; the caller saves once when the editing ends (one NVS write, not one a detent).
@@ -114,10 +116,46 @@ static String row_value(int row)
     case ROW_WIFI_ADD:
       if (wifi_asked_at && millis() - wifi_asked_at < 30000) return "type the password on the Mac";
       return String(wifi_store_count()) + " saved · tap to add";
-    case ROW_BRIGHTNESS: return editing ? "- " + String(settings.brightness) + "% +" : String(settings.brightness) + "%";
+    case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
     case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
   }
   return "";
+}
+
+static bool stepped(int row)  // the rows that take the crown
+{
+  return row == ROW_HIDE_COMPLETED || row == ROW_HAPTICS || row == ROW_SOUND || row == ROW_BRIGHTNESS || row == ROW_SAVER;
+}
+
+// One crown detent on a row being set: the next / previous value, clamped (no wrap: the end is felt).
+static void step_row(int row, int dir)
+{
+  int before;
+  switch (row) {
+    case ROW_HIDE_COMPLETED:
+      before = settings.hide_completed;
+      settings.hide_completed = max(0, min(2, before + dir));
+      if (settings.hide_completed != before) haptic_tick();
+      return;
+    case ROW_HAPTICS:
+      before = settings.haptics;
+      settings.haptics = max(0, min(3, before + dir));
+      if (settings.haptics != before) haptic_sample();  // the new strength, felt at once
+      return;
+    case ROW_SOUND:
+      before = settings.sound;
+      settings.sound = max(0, min(2, before + dir));
+      if (settings.sound != before) settings_apply(), haptic_sample();
+      return;
+    case ROW_BRIGHTNESS: settings_adjust_brightness(dir); return;
+    case ROW_SAVER: {
+      int i = 0, n = sizeof(SAVER_STEPS);
+      while (i < n && SAVER_STEPS[i] != settings.saver) i++;
+      int next = max(0, min(n - 1, i + dir));
+      if (next != i) settings.saver = SAVER_STEPS[next], haptic_tick();
+      return;
+    }
+  }
 }
 
 void settings_page_refresh()
@@ -127,11 +165,13 @@ void settings_page_refresh()
     int i = focus + slot - VISIBLE / 2;
     bool used = i >= 0 && i < (int)rows->size();
     set_text(names[slot], used ? row_name((*rows)[i]) : "");
-    set_text(values[slot], used ? row_value((*rows)[i]) : "");
+    String value = used ? row_value((*rows)[i]) : "";
+    if (used && editing && i == focus) value = "- " + value + " +";  // the row that has the crown
+    set_text(values[slot], value);
   }
   bool deck = rows == &DECK_ROWS;
   if (editing) {
-    set_text(hint, "crown: brightness · tap: done");
+    set_text(hint, "crown: change · tap: save");
     return;
   }
   set_text(hint, (*rows)[focus] == ROW_LINK ? "hold 2 s: forget the paired relay"
@@ -142,7 +182,7 @@ void settings_page_refresh()
 void settings_page_turn(int step)
 {
   if (editing) {
-    settings_adjust_brightness(step);
+    for (int i = 0; i < abs(step); i++) step_row((*rows)[focus], step > 0 ? 1 : -1);
     settings_page_refresh();
     return;
   }
@@ -156,13 +196,22 @@ void settings_page_turn(int step)
 
 void settings_page_tap()
 {
-  switch ((*rows)[focus]) {
+  int row = (*rows)[focus];
+  if (stepped(row)) {  // tap: the crown is the row's; tap again: saved, the crown picks rows again
+    editing = !editing;
+    if (!editing) {
+      save();
+      settings_apply();
+      if (row == ROW_SAVER) buddy_input();  // the new wait starts from now
+    }
+    haptic_click();
+    settings_page_refresh();
+    return;
+  }
+  switch (row) {
     case ROW_LINK: return;  // forgetting takes a hold, never a tap
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
-    case ROW_HIDE_COMPLETED: settings.hide_completed = (settings.hide_completed + 1) % 3; break;
-    case ROW_HAPTICS: settings.haptics = (settings.haptics + 1) % 4; break;
-    case ROW_SOUND: settings.sound = (settings.sound + 1) % 3; break;
     case ROW_WIFI_ADD: {  // the bridge asks the password in a dialog on the Mac; the W line brings the network here
       JsonDocument cmd;
       cmd["cmd"] = "wifi_add";
@@ -172,19 +221,7 @@ void settings_page_tap()
       settings_page_refresh();
       return;
     }
-    case ROW_BRIGHTNESS:  // tap: the crown sets it; tap again: done (saved)
-      editing = !editing;
-      if (!editing) save();
-      haptic_click();
-      settings_page_refresh();
-      return;
-    case ROW_SAVER: {
-      size_t i = 0, n = sizeof(SAVER_STEPS);
-      while (i < n && SAVER_STEPS[i] != settings.saver) i++;
-      settings.saver = SAVER_STEPS[(i + 1) % n];
-      buddy_input();  // the new wait starts from now
-      break;
-    }
+    default: return;
   }
   save();
   settings_apply();
