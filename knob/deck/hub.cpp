@@ -7,7 +7,7 @@
 #include <time.h>
 
 static const App *const APPS[] = {&app_deck, &app_usage, &app_prompts, &app_prs, &app_day, &app_focus, &app_mic, &app_timer,
-                                  &app_mac, &app_jog, &app_wheel, &app_clock, &app_wifi, &app_settings};
+                                  &app_mac, &app_jog, &app_wheel, &app_snake, &app_clock, &app_wifi, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
@@ -323,6 +323,7 @@ String hub_report()
   if (current == &app_mac) return "Mac " + mac_report();
   if (current == &app_jog) return "Jog " + jog_report();
   if (current == &app_wheel) return "Wheel " + wheel_report();
+  if (current == &app_snake) return "Snake " + snake_report();
   if (current == &app_focus) return "Focus " + focus_report();
   if (current == &app_usage) return "Usage " + usage_report();
   if (current == &app_day) return "Day " + day_report();

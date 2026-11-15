@@ -898,7 +898,8 @@ static void run_test(const String &line)
   else if (verb == "bat") Serial.println(battery_report());
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
-  else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
+  else if (verb == "ptarget") prompts_test_target(arg);
+  else if (verb == "snakelevel") snake_test_level(arg.toInt());  // tests: a level's walls without playing it  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
     const Agent *a = shown_agent(worktrees[index_shown]);
@@ -949,6 +950,7 @@ static void loop_tick(lv_timer_t *)
   mac_tick();
   jog_tick();
   wheel_tick();
+  snake_tick();
   focus_tick();
   usage_tick();
   day_tick();
@@ -1070,6 +1072,7 @@ extern "C" void ui_init(void)
   mac_create();
   jog_create();
   wheel_create();
+  snake_create();
   focus_create();
   usage_create();
   day_create();

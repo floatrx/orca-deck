@@ -116,6 +116,18 @@ void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const
     lv_color_t eye = lv_color_hex(0x1A1210);
     for (int c : {4, 11}) fill(b, bw, bh, x0 + c * pw, y0 + ph + ph / 2, 2 * pw, max(1, ph / 6), eye);
   }
+  if (mood == "sleep" && !bang_ok) {  // the hub's badge: two small pixel z's drifting up from the head
+    lv_color_t zc = lv_color_mix(lv_color_hex(C_MUTED), bg, 200);
+    int u = max(1, pw / 2 + 1);
+    for (int k = 0; k < 2; k++) {
+      float phase = fmodf(t * 0.5f + k * 0.5f, 1.0f);
+      int zx = x0 + (COLS - 3) * pw + (int)(phase * 2 * u) + k * u, zy = y0 - (int)(phase * 3 * u) - u;
+      if (zy < 0 || zx + 3 * u > bw) continue;
+      fill(b, bw, bh, zx, zy, 3 * u, u, zc);              // top bar
+      fill(b, bw, bh, zx + u, zy + u, u, u, zc);          // the diagonal
+      fill(b, bw, bh, zx, zy + 2 * u, 3 * u, u, zc);      // bottom bar
+    }
+  }
   if (bang) {  // "!" above the head: a bar and a dot
     lv_color_t y = lv_color_hex(YELLOW);
     fill(b, bw, bh, x0 + 8 * pw, y0 - 3 * ph + ph / 4, 2 * pw, ph + ph * 2 / 5, y);
@@ -213,7 +225,11 @@ static void paint_info()
   lv_obj_set_style_text_color(power_label, lv_color_hex(low ? C_ATTENTION : C_MUTED), 0);
 }
 
-// The loudest state among the agents; "sleep" when no relay link is alive.
+#define DONE_CHEER_S 30  // a fresh done: Clawd cheers this long, then he sleeps
+
+// The loudest state among the agents; "sleep" when no relay link is alive, and when every agent is done (user,
+// 2026-11-15: «коли всі задачі DONE … персонаж який спить … Zzzz»): a done younger than DONE_CHEER_S still cheers
+// first, so the moment a task finishes is seen.
 String claude_mood()
 {
   if (!shared_mux) return "sleep";
@@ -221,13 +237,18 @@ String claude_mood()
   bool online = shared.online;
   xSemaphoreGive(shared_mux);
   if (!online) return "sleep";
-  String out = "idle";
+  time_t now = time(nullptr);
+  bool any = false, attention = false, working = false, fresh_done = false;
   for (const Agent &a : deck_all_agents()) {
-    if (a.bucket == "attention") out = "attention";
-    else if (a.bucket == "working" && out != "attention") out = "working";
-    else if (a.bucket == "done" && out == "idle") out = "done";
+    any = true;
+    if (a.bucket == "attention") attention = true;
+    else if (a.bucket == "working") working = true;
+    else if (a.bucket == "done" && a.since && now > 1700000000 && now - a.since / 1000 < DONE_CHEER_S) fresh_done = true;
   }
-  return out;
+  if (attention) return "attention";
+  if (working) return "working";
+  if (fresh_done) return "done";
+  return any ? "sleep" : "idle";
 }
 
 static void show()

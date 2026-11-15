@@ -14,6 +14,15 @@ function demo.active()
   return true
 end
 
+--- `echo alldone > ~/.config/orca-deck/demo-mode`: every agent done for an hour (the knob's sleeping Clawd).
+local function allDone()
+  local file = io.open(FLAG, "r")
+  if not file then return false end
+  local text = file:read("a") or ""
+  file:close()
+  return text:find("alldone", 1, true) ~= nil
+end
+
 local function now() return math.floor(hs.timer.secondsSinceEpoch() * 1000) end
 
 -- One table per worktree: repo, name (the branch, as Orca names a worktree), and its agents.
@@ -74,6 +83,10 @@ demo.mac = { micMuted = false, muted = false, volume = 45, micVolume = 60 }
 local function worktreeId(w) return "demo-" .. w.repo .. "::/demo/" .. w.repo .. "/" .. w.name end
 
 local function agentOut(a, at)
+  if allDone() then
+    return { id = a.id, kind = "claude", chat = true, bucket = "done", state = "done", since = at - 3600 * 1000,
+      last = a.last, prompt = a.prompt, interrupted = false }
+  end
   return { id = a.id, kind = "claude", chat = true, bucket = a.bucket, state = a.state, tool = a.tool,
     since = at - a.ago * 1000, last = a.last, prompt = a.prompt, interrupted = false }
 end
