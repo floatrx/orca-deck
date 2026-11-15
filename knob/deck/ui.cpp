@@ -890,6 +890,7 @@ static void run_test(const String &line)
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "wifi") Serial.println(wifi_store_report());
   else if (verb == "shot") screenshot();
+  else if (verb == "bat") Serial.println(battery_report());
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session

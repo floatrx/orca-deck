@@ -132,6 +132,8 @@ struct Shared {
 
 extern SemaphoreHandle_t shared_mux;
 extern String boot_note;
+int battery_pin_mv();     // battery.cpp: GPIO1 (the probe)
+String battery_report();
 String ui_slowest_note();  // the slowest UI pass so far this run: "180 ms in Claude"  // deck.ino: "boot #3: BROWNOUT (power dipped) after 41 s up"
 extern Shared shared;
 

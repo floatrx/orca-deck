@@ -453,6 +453,11 @@ static void dispatch_task(void *)
     }
     static bool boot_told = false;  // once a boot, to the relay's log (any non-C line is logged there)
     if (!boot_told && link == LINK_BLE) boot_told = ble_send_line("L " + boot_note + " · heap " + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+    static uint32_t bat_told = 0;  // the battery probe: a line a minute to the relay's log
+    if (link == LINK_BLE && millis() - bat_told > 60000) {
+      bat_told = millis();
+      ble_send_line("L " + battery_report());
+    }
     String detail = detail_request();
     if (detail.length()) {
       if (link == LINK_BLE) ble_send_line("C " + detail);
