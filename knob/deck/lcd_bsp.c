@@ -309,12 +309,24 @@ static void example_lvgl_unlock(void)
   xSemaphoreGive(lvgl_mux);
 }
 void ui_frame_time(uint32_t ms);  // ui.cpp: the slowest UI pass, kept for the next boot's note
+bool ui_recording(void);          // record.cpp: the demo recorder holds time
+void ui_record_step(void);
 
 static void example_lvgl_port_task(void *arg)
 {
   uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
   for(;;)
   {
+    if (ui_recording())  // the recorder: one frame of UI time, captured and sent, per pass
+    {
+      if (example_lvgl_lock(-1))
+      {
+        ui_record_step();
+        example_lvgl_unlock();
+      }
+      vTaskDelay(1);
+      continue;
+    }
     if (example_lvgl_lock(-1))
     {
       uint32_t started = xTaskGetTickCount();
@@ -336,7 +348,7 @@ static void example_lvgl_port_task(void *arg)
 }
 static void example_increase_lvgl_tick(void *arg)
 {
-  lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
+  if (!ui_recording()) lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);  // the recorder advances the tick itself
 }
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {

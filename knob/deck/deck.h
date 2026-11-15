@@ -420,3 +420,11 @@ String ui_meta(const Worktree &w, const Agent *a);
 uint32_t color_of(const String &bucket);
 lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color, int y, int width = 236);
 void set_text(lv_obj_t *label, const String &text);
+
+// record.cpp — the demo recorder: frame-exact capture of the UI's real animations (T rec, knob/test/rec.py)
+void rec_start(const String &arg);
+void rec_event(const char *kind);      // a haptic event, logged with its frame time while recording
+void ui_test_run_now(const String &line);  // ui.cpp: run one T verb at once (the recorder's script)
+uint32_t deck_millis();                // millis(), but frame time while recording
+// Every millis() in the deck's code reads the recorder's clock (record.cpp calls the real one as (millis)()).
+#define millis() deck_millis()

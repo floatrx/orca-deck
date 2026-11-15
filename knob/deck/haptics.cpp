@@ -49,18 +49,21 @@ static void play(const uint8_t *table, int times)
 
 void haptic_tick()
 {
+  rec_event("tick");
   play(TICKS, 1);
   sound_tick();
 }
 
 void haptic_click(int times)
 {
+  rec_event("click");
   play(CLICKS, times);
   sound_click();
 }
 
 void haptic_buzz(int times)
 {
+  rec_event("buzz");
   play(BUZZES, times);
   sound_buzz(times);
 }
@@ -70,6 +73,7 @@ void haptic_buzz(int times)
 // swipe down went unnoticed).
 void haptic_home()
 {
+  rec_event("home");
   plays++;
   if (settings.haptics) {
     drv_write(0x04, 74);  // Transition Ramp Down Short Smooth 1 (100 → 0 %)

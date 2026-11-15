@@ -468,6 +468,7 @@ static void fly_away(const String &text)
 {
   if (!fly || !text.length()) return;
   set_text(fly, text);
+  lv_obj_move_foreground(fly);
   lv_obj_set_style_opa(fly, LV_OPA_COVER, 0);
   lv_obj_clear_flag(fly, LV_OBJ_FLAG_HIDDEN);
   lv_anim_t a;
@@ -856,6 +857,9 @@ static void test_report(const String &what)
                 agent_page_is_open() ? (" · " + agent_page_debug()).c_str() : "");
 }
 
+static void run_test(const String &line);
+void ui_test_run_now(const String &line) { run_test(line); }
+
 static void run_test(const String &line)
 {
   int space = line.indexOf(' ');
@@ -890,6 +894,7 @@ static void run_test(const String &line)
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "wifi") Serial.println(wifi_store_report());
   else if (verb == "shot") screenshot();
+  else if (verb == "rec") rec_start(arg);
   else if (verb == "bat") Serial.println(battery_report());
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
@@ -1054,7 +1059,7 @@ extern "C" void ui_init(void)
   lv_obj_set_style_line_color(check, lv_color_hex(C_DONE), 0);
   lv_obj_add_flag(check, LV_OBJ_FLAG_HIDDEN);
 
-  fly = make_label(lv_layer_top(), &deck_16, C_INK, 24, 250);
+  fly = make_label(screen, &deck_16, C_INK, 24, 250);  // on the screen, not the top layer: the recorder sees it
   lv_label_set_long_mode(fly, LV_LABEL_LONG_WRAP);
   lv_obj_add_flag(fly, LV_OBJ_FLAG_HIDDEN);
 

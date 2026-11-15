@@ -34,6 +34,12 @@ static float eq_shown[EQ_BARS / 2];
 static Stage stage = CLOSED;
 static String agent_id, text;
 static uint32_t started_at = 0, sent_at = 0, seen_version = 0;
+// Staged dictation for a recording (`T dictdemo listen <text>`): the next hold runs the real screens, but the
+// microphone stays off (the equalizer plays a synthetic voice), and after the tap `text` comes back as the
+// transcript a moment later. Nothing is recorded, transcribed or sent. One use, then off.
+static bool staged = false;
+static String staged_text;
+#define STAGED_TRANSCRIBE_MS 1100
 
 static void show_stage(Stage next)
 {
@@ -72,7 +78,8 @@ bool dictate_is_open() { return stage != CLOSED; }
 
 void dictate_close()
 {
-  if (stage == RECORDING) dictation_stop(false);
+  if (stage == RECORDING && !staged) dictation_stop(false);
+  staged = false;
   stage = CLOSED;
   if (page) lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
 }
@@ -95,7 +102,7 @@ void dictate_begin(const String &title, const String &agent)
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   seen_version = shared.transcript_version;
   xSemaphoreGive(shared_mux);
-  if (!dictation_start()) {
+  if (!staged && !dictation_start()) {
     fail("the microphone is busy");
     return;
   }
@@ -122,13 +129,26 @@ static inline void eq_dot(int x, int y, lv_color_t c)  // a 3 × 3 px brush
   }
 }
 
+static void staged_bands(float *out)  // a voice-like spectrum: ~4 syllables a second, formant bumps in the low bands
+{
+  float t = (millis() - started_at) / 1000.0f;
+  float syllable = 0.25f + 0.75f * fabsf(sinf(t * M_PI * 4.2f)) * (0.65f + 0.35f * sinf(t * 1.7f + 1));
+  if (t < 0.3f) syllable *= t / 0.3f;
+  for (int b = 0; b < EQ_BARS / 2; b++) {
+    float formants = expf(-b / 14.0f) + 0.45f * expf(-(b - 7) * (b - 7) / 8.0f) + 0.3f * expf(-(b - 15) * (b - 15) / 10.0f);
+    float jitter = 0.75f + 0.25f * sinf(b * 2.1f + t * 23) * sinf(b * 0.7f + t * 7);
+    out[b] = fminf(1.0f, 0.95f * syllable * formants * jitter);
+  }
+}
+
 static void draw_eq()
 {
   static uint32_t last = 0;
   if (!eq || millis() - last < 30) return;
   last = millis();
   float now[EQ_BARS / 2];
-  dictation_bands(now);
+  if (staged) staged_bands(now);
+  else dictation_bands(now);
   for (int b = 0; b < EQ_BARS / 2; b++) eq_shown[b] = fmaxf(now[b], eq_shown[b] * 0.82f);  // fast up, slow down
   memset(eq_buf, 0, 360 * 360 * sizeof(lv_color_t));  // C_BG is black
   lv_color_t white = lv_color_hex(0xFFFFFF);
@@ -147,7 +167,7 @@ void dictate_tick()
 {
   if (stage == RECORDING) {
     uint32_t held = millis() - started_at;
-    if (!dictation_recording()) {  // the 60 s limit ended it: transcribe what there is
+    if (!staged && !dictation_recording()) {  // the 60 s limit ended it: transcribe what there is
       sent_at = millis();
       show_stage(TRANSCRIBING);
       return;
@@ -156,6 +176,14 @@ void dictate_tick()
     char t[12];
     snprintf(t, sizeof(t), "%u:%02u", (unsigned)(held / 60000), (unsigned)(held / 1000 % 60));
     set_text(time_label, t);
+  } else if (stage == TRANSCRIBING && staged) {
+    if (millis() - sent_at >= STAGED_TRANSCRIBE_MS) {
+      staged = false;
+      text = staged_text;
+      haptic_click(2);
+      show_stage(RESULT);
+      sent_at = millis();
+    }
   } else if (stage == TRANSCRIBING) {
     xSemaphoreTake(shared_mux, portMAX_DELAY);
     bool fresh = shared.transcript_version != seen_version;
@@ -226,6 +254,11 @@ void dictate_tick()
 // Tests: the result's play-out with `t` as the transcript — nothing is sent (no agent, no `say`).
 void dictate_demo(const String &t)
 {
+  if (t.startsWith("listen ")) {  // staged: the next hold plays the whole dictation (see `staged`)
+    staged = true;
+    staged_text = t.substring(7);
+    return;
+  }
   agent_id = "";
   text = t;
   set_text(title_label, "demo");
@@ -238,7 +271,7 @@ void dictate_demo(const String &t)
 void dictate_tap()
 {
   if (stage == RECORDING) {  // done speaking
-    dictation_stop(true);
+    if (!staged) dictation_stop(true);
     sent_at = millis();
     haptic_click();
     show_stage(TRANSCRIBING);

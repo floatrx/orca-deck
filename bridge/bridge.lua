@@ -21,6 +21,7 @@
 
 local DIR = debug.getinfo(1, "S").source:match("^@(.*/)")
 local core = dofile(DIR .. "core.lua")
+local demo = dofile(DIR .. "demo.lua")
 
 local ORCA_CLI = "/opt/homebrew/bin/orca"
 local PS_FILE = "/tmp/orca-deck-ps.json"
@@ -839,6 +840,7 @@ local function run(message, via)
     front and front:name() or "?"))
   local refusal = core.commandRefusal(cmd, via)
   if refusal then return ack(tostring(cmd), refusal) end
+  if demo.active() then return demo.cmd(message) end  -- demo mode: nothing outside demo.lua moves
   if cmd == "go" then
     return ack(cmd, go(message.id, message.pane))
   elseif cmd == "turn" then
@@ -897,6 +899,10 @@ local function onApi(method, route, query, headers, body)
   if not core.authorized(headers, deckBridge.config.token) then
     trail(string.format("401 %s %s from %s", method, route, from))
     return json(401, { error = "unauthorized" })
+  end
+  if demo.active() then  -- demo mode (bridge/demo.lua): invented workspaces for a recording
+    local code, value = demo.api(method, route, query, route == "/api/mac" and macStatus() or nil)
+    if code then return json(code, value) end
   end
   if method == "GET" and route == "/api/ping" then
     return json(200, { v = core.PROTOCOL, ok = true, at = nowMs() })
