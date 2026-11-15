@@ -34,6 +34,7 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 | **Jog** | the crown as a precise wheel for the Mac's front app | act · reset · — · ←/→ mode | bridge `jog` |
 | **Wheel** | pick lunch / a break / yes-no by spinning | spin · spin · — · ←/→ list | knob only |
 | **Clock** | the Mac's time, battery, CPU | — | bridge `/api/mac` |
+| **Wi-Fi** | add a network with no Mac at hand | network / character · password / type · forget / delete · ←/→ character set | knob only |
 | **Settings** | Connection, Wi-Fi, Screensaver, Haptics, Sound, Brightness | row · change · Connection: forget (2 s) | NVS |
 
 **Everywhere:**
@@ -51,6 +52,9 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
   `~/.config/orca-deck/wifi.json` (`[{"ssid": "…", "pass": "…"}]`, mode 600, served on localhost only), or
   Settings → "Add the Mac's Wi-Fi": a tap asks the network and its password in a dialog on the Mac. 2.4 GHz only;
   a "<name>-5G" network is tried as "<name>" too. `secrets.h`'s network stays as a seed.
+- **Wi-Fi app** — the networks on the air (strongest first, saved ones marked), a tap types its password on a
+  wheel of characters (crown, tap types, hold deletes, swipe left / right: abc · ABC · 123 · !?&; JOIN is the
+  wheel's first item). Only a network that joined is saved. Scanning takes ~10 s while BLE shares the radio.
 - **Control Center**: swipe up in the hub or any app but Claude (there it is the next agent) — a sheet slides up
   with four tiles: Mic (mute), Focus, Sound, Brightness; Claude's limits on top, the Mac's battery and CPU below.
   Crown + tap, or a tap on a tile; swipe down closes it. A tap on Sound or Brightness gives it the crown (the
@@ -170,7 +174,7 @@ Verbs:
 | `alert` · `tap banner` | the banner for the agent on screen / a tap on it |
 | `dictate` · `subtitle` | the dictation screen's state / the Claude row and the limits |
 | `shot` | a screenshot (RGB565 over USB): `uv run knob/test/shot.py out.png "wait 10" "open Clock" …` writes a PNG |
-| `wifi` | the stored Wi-Fi networks (SSIDs and password lengths only) |
+| `wifi` · `wifitry <ssid>` | the stored Wi-Fi networks (SSIDs and password lengths only) / a trial join with the stored password, nothing saved |
 | `bloom` · `fly [text]` · `dictdemo [text]` | Claude's done bloom / a sent text flying / the dictation's send play-out — nothing is sent |
 | `ptarget <id part>` | pin Prompts to the chat agent whose id has it — no match sends nowhere (scratch-session tests) |
 | `saver off\|on\|now` | keep the screensaver out of a test (until the next reboot) / show it |

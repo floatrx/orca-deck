@@ -173,6 +173,7 @@ void wifi_store_set_mac(const std::vector<WifiNet> &mac, const std::vector<Strin
 void wifi_store_add(const String &ssid, const String &pass);
 void wifi_store_forget(const String &ssid);
 String wifi_store_report();  // never a password
+String wifi_band_twin(const String &name);  // "home-5G" → "home" (the 2.4 GHz twin a dual-band router names so); else ""
 
 // link_serial.cpp / link_ble.cpp / link_wifi.cpp
 void serial_link_start();
@@ -183,6 +184,15 @@ bool ble_connected();
 void ble_forget();
 void ble_drop();  // test: end the connection as if the knob went out of range
 void wifi_link_start();
+struct WifiScanItem {
+  String ssid;
+  int rssi;
+  bool open;
+};
+void wifi_request_scan();                          // the Wi-Fi app → the Wi-Fi task
+uint32_t wifi_scan_take(std::vector<WifiScanItem> &out);  // the last scan; its version (0: none yet)
+void wifi_request_try(const String &ssid, const String &pass);
+int wifi_try_result(String &why);                  // 0 pending, 1 joined, -1 failed (why)
 
 // haptics.cpp
 void haptic_init();
@@ -242,7 +252,7 @@ struct App {
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
 extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day,
-    app_prompts, app_mic, app_prs;
+    app_prompts, app_mic, app_prs, app_wifi;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -298,6 +308,12 @@ String usage_report();
 void day_create();
 void day_tick();
 String day_report();
+
+// app_wifi.cpp — add a network on the knob: scan, a character wheel, a trial join
+void wifi_app_create();
+void wifi_app_tick();
+String wifi_app_report();
+void wifi_app_test_try(const String &ssid);  // tests: join with the stored password, save nothing
 
 // app_prompts.cpp
 void prompts_create();

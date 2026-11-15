@@ -3,6 +3,7 @@
 #include "deck.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <algorithm>
 #include "secrets.h"
 
 #define FALLBACK_AFTER_MS 10000
@@ -24,6 +25,110 @@ static void poll_failed(const String &why)
   if (++fails_in_row >= FAILS_TO_REPORT) set_status(false, why);
 }
 
+// The Wi-Fi app's requests (LVGL task → this task, which alone drives the radio): a scan, or a trial join with a typed
+// password. The trial disconnects a fallback link for a few seconds and rejoins it after.
+static SemaphoreHandle_t req_mux;
+static bool scan_wanted = false, try_wanted = false;
+static std::vector<WifiScanItem> scan_items;
+static uint32_t scan_version = 0;
+static String try_ssid, try_pass, try_why;
+static int try_state = 0;  // 0 idle / pending, 1 joined, -1 failed
+
+void wifi_request_scan()
+{
+  xSemaphoreTake(req_mux, portMAX_DELAY);
+  scan_wanted = true;
+  xSemaphoreGive(req_mux);
+}
+
+uint32_t wifi_scan_take(std::vector<WifiScanItem> &out)
+{
+  xSemaphoreTake(req_mux, portMAX_DELAY);
+  out = scan_items;
+  uint32_t v = scan_version;
+  xSemaphoreGive(req_mux);
+  return v;
+}
+
+void wifi_request_try(const String &ssid_in, const String &pass_in)
+{
+  xSemaphoreTake(req_mux, portMAX_DELAY);
+  try_ssid = ssid_in;
+  try_pass = pass_in;
+  try_state = 0;
+  try_why = "";
+  try_wanted = true;
+  xSemaphoreGive(req_mux);
+}
+
+int wifi_try_result(String &why)
+{
+  xSemaphoreTake(req_mux, portMAX_DELAY);
+  int s = try_wanted ? 0 : try_state;
+  why = try_why;
+  xSemaphoreGive(req_mux);
+  return s;
+}
+
+static void serve_requests()
+{
+  xSemaphoreTake(req_mux, portMAX_DELAY);
+  bool scan = scan_wanted, trial = try_wanted;
+  String s = try_ssid, p = try_pass;
+  xSemaphoreGive(req_mux);
+  if (!scan && !trial) return;
+  bool was_on = radio_on;
+  if (!was_on) WiFi.mode(WIFI_STA);
+  if (scan) {
+    int n = WiFi.scanNetworks();
+    std::vector<WifiScanItem> items;
+    for (int i = 0; i < n; i++) {
+      String name = WiFi.SSID(i);
+      if (!name.length()) continue;  // hidden networks
+      bool merged = false;
+      for (WifiScanItem &it : items) {
+        if (it.ssid == name) it.rssi = max(it.rssi, (int)WiFi.RSSI(i)), merged = true;
+      }
+      if (!merged) items.push_back({name, (int)WiFi.RSSI(i), WiFi.encryptionType(i) == WIFI_AUTH_OPEN});
+    }
+    WiFi.scanDelete();
+    std::sort(items.begin(), items.end(), [](const WifiScanItem &a, const WifiScanItem &b) { return a.rssi > b.rssi; });
+    xSemaphoreTake(req_mux, portMAX_DELAY);
+    scan_items = items;
+    scan_version++;
+    scan_wanted = false;
+    xSemaphoreGive(req_mux);
+  }
+  if (trial) {
+    WiFi.disconnect();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    wifi_reason = 0;
+    WiFi.begin(s.c_str(), p.c_str());
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+      int r = wifi_reason;
+      if (r == WIFI_REASON_AUTH_FAIL || r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || r == WIFI_REASON_HANDSHAKE_TIMEOUT) break;
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    bool ok = WiFi.status() == WL_CONNECTED;
+    int r = wifi_reason;
+    String why = ok ? "" : r == WIFI_REASON_NO_AP_FOUND ? "not found on 2.4 GHz"
+                 : r == WIFI_REASON_AUTH_FAIL || r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || r == WIFI_REASON_HANDSHAKE_TIMEOUT ? "wrong password?"
+                 : r ? "refused (reason " + String(r) + ")" : "no answer from the network";
+    Serial.printf("wifi trial %s: %s\n", s.c_str(), ok ? "joined" : why.c_str());  // the SSID only
+    WiFi.disconnect();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    wifi_reason = 0;
+    if (was_on) WiFi.begin(ssid.c_str(), pass.c_str());  // the fallback link, back on its own network
+    xSemaphoreTake(req_mux, portMAX_DELAY);
+    try_state = ok ? 1 : -1;
+    try_why = why;
+    try_wanted = false;
+    xSemaphoreGive(req_mux);
+  }
+  if (!was_on) WiFi.mode(WIFI_OFF);
+}
+
 static String wifi_problem()
 {
   if (ever_joined && wifi_reason) return "wifi: weak signal (" + String(last_rssi) + " dBm) · rejoining";
@@ -37,18 +142,6 @@ static String wifi_problem()
   }
 }
 
-// The ESP32-S3 sees 2.4 GHz only. A dual-band router often names its 5 GHz network "<name>_5G" (or -5G,
-// " 5GHz"); the 2.4 GHz twin is then "<name>" with the same password.
-static String band_twin(const String &name)
-{
-  String low = name;
-  low.toLowerCase();
-  for (const char *tail : {"_5ghz", "-5ghz", " 5ghz", "5ghz", "_5g", "-5g", " 5g", "5g"}) {
-    if (low.endsWith(tail)) return name.substring(0, name.length() - strlen(tail));
-  }
-  return "";
-}
-
 // The strongest network on the air that the store knows (by name or by its 2.4 GHz twin); none seen: the first stored.
 static void pick_network()
 {
@@ -58,7 +151,7 @@ static void pick_network()
   pass = known.empty() ? "" : known[0].pass;
   for (int i = 0; i < n; i++) {
     for (const WifiNet &k : known) {
-      String twin = band_twin(k.ssid);
+      String twin = wifi_band_twin(k.ssid);
       if ((WiFi.SSID(i) == k.ssid || (twin.length() && WiFi.SSID(i) == twin)) && WiFi.RSSI(i) > best_rssi) {
         best_rssi = WiFi.RSSI(i);
         ssid = WiFi.SSID(i);
@@ -175,6 +268,7 @@ static void wifi_task(void *)
   uint32_t relay_last = millis(), last_poll = 0, last_detail = 0, lost_at = 0;
   bool joined = false;
   for (;;) {
+    serve_requests();
     bool relay = link_alive(LINK_BLE) || link_alive(LINK_USB);
     if (relay) relay_last = millis();
     bool wanted = settings.wifi && !wifi_store_list().empty() && !relay && millis() - relay_last > FALLBACK_AFTER_MS;
@@ -242,6 +336,7 @@ static void wifi_task(void *)
 
 void wifi_link_start()
 {
+  req_mux = xSemaphoreCreateMutex();
   WiFi.mode(WIFI_OFF);
   xTaskCreatePinnedToCoreWithCaps(wifi_task, "wifi", 16 * 1024, NULL, 1, NULL, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }

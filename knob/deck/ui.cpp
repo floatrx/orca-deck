@@ -887,6 +887,7 @@ static void run_test(const String &line)
   else if (verb == "fly") fly_away(arg.length() ? arg : "запусти тести");  // tests: a sent text flying away
   else if (verb == "wifi") Serial.println(wifi_store_report());
   else if (verb == "shot") screenshot();
+  else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you
@@ -944,6 +945,7 @@ static void loop_tick(lv_timer_t *)
   prompts_tick();
   micmute_tick();
   prs_tick();
+  wifi_app_tick();
   cc_tick();
   dictate_tick();
   tz_persist();
@@ -1063,6 +1065,7 @@ extern "C" void ui_init(void)
   prompts_create();
   micmute_create();
   prs_create();
+  wifi_app_create();
   dictate_create();
   banner_create();
   hub_create();

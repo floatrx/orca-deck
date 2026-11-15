@@ -8,6 +8,18 @@
 #include <Preferences.h>
 #include "secrets.h"
 
+// The ESP32-S3 sees 2.4 GHz only. A dual-band router often names its 5 GHz network "<name>_5G" (or -5G,
+// " 5GHz"); the 2.4 GHz twin is then "<name>" with the same password.
+String wifi_band_twin(const String &name)
+{
+  String low = name;
+  low.toLowerCase();
+  for (const char *tail : {"_5ghz", "-5ghz", " 5ghz", "5ghz", "_5g", "-5g", " 5g", "5g"}) {
+    if (low.endsWith(tail)) return name.substring(0, name.length() - strlen(tail));
+  }
+  return "";
+}
+
 static SemaphoreHandle_t mux;
 static std::vector<WifiNet> nets;
 static std::vector<String> urls;
