@@ -274,6 +274,7 @@ static void step()
   if (eats) {
     len++;
     score++;
+    pet_event(PET_SNAKE_APPLE);  // a game with Clawd: joy (pet.cpp)
     ate_at = millis();
     step_ms = max(STEP_MIN_MS, (int)step_ms - STEP_FASTER_MS);
     if (++level_apples >= APPLES_PER_LEVEL && level < LEVELS) {  // the next level: new walls, a short snake

@@ -383,6 +383,39 @@ void snake_create();
 void snake_tick();
 String snake_report();
 void snake_test_level(int n);
+String usb_report();  // usbdiag.cpp
+
+// pet.cpp — Clawd the pet (.work/plans/clawd-pet.md)
+enum PetStage { PET_EGG, PET_BABY, PET_ADULT, PET_DEAD };
+enum PetStyle { STYLE_PLAIN, STYLE_OWL, STYLE_SHIPPER, STYLE_DJ };
+enum PetEvent { PET_AGENT_WORKING, PET_AGENT_ATTENTION, PET_AGENT_DONE, PET_SENT, PET_PR_FAIL, PET_SNAKE_APPLE };
+enum PetAction { PET_FEED, PET_PLAY, PET_SQUASH, PET_HEAL, PET_LIGHTS, PET_VACATION, PET_NEW_EGG };
+enum PetReaction { PET_REACT_NONE, PET_REACT_TYPING, PET_REACT_ALERT, PET_REACT_EAT, PET_REACT_PLANE, PET_REACT_BUG,
+                   PET_REACT_HATCH, PET_REACT_CHEER };
+struct PetLook {
+  PetStage stage = PET_ADULT;
+  PetStyle style = STYLE_PLAIN;
+  bool sick = false, hungry = false, sleeping = false;
+  int bugs = 0;
+  PetReaction reaction = PET_REACT_NONE;
+  uint32_t reaction_ms = 0;  // since the reaction began
+};
+void pet_init();                 // LVGL task, at UI build: loads NVS
+void pet_tick();                 // LVGL task, every frame: time passes, saves now and then
+void pet_event(PetEvent e);      // LVGL task: Claude work reaches the pet
+bool pet_action(PetAction a);    // LVGL task: the app's actions; false: nothing to do
+PetLook pet_look();
+int pet_food();
+int pet_joy();
+int pet_energy();
+bool pet_vacation();
+bool pet_born();
+uint32_t pet_age_s();
+String pet_counts();
+const char *pet_stage_name(PetStage s);
+const char *pet_style_name(PetStyle s);
+String pet_report();
+void pet_test(const String &arg);
 
 // mic.cpp — the PDM microphone (spike: T mic <seconds>)
 void mic_test(int seconds);

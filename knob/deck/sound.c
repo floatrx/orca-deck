@@ -89,6 +89,10 @@ static void enqueue(float freq, float delay, float length, float peak, wave_t wa
 
 void sound_init(void)
 {
+  // The level first, then the output (2026-11-15): gpio_config() makes the pin an output at 0, and that pulse on the
+  // CH445P select glitched the USB lines (CRC5 / bit-stuff errors, the host stopped its SOFs, the port went silent
+  // until a power cycle — usbdiag.cpp caught it). A high level set before the direction gives no pulse.
+  gpio_set_level(PIN_AUDIO_MUX, 1);
   gpio_config_t mux = {
     .pin_bit_mask = 1ULL << PIN_AUDIO_MUX,
     .mode = GPIO_MODE_OUTPUT,

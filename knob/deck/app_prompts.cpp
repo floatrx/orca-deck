@@ -144,6 +144,7 @@ static void tap()
   cmd["id"] = t.agent;
   cmd["text"] = g->prompts[sel];
   push_command(cmd);
+  pet_event(PET_SENT);
   haptic_click(2);
   sent_agent = t.agent;
   sent_text = g->prompts[sel];

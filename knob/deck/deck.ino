@@ -66,7 +66,7 @@ void setup()
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
   settings_apply();  // brightness and sound level from NVS
   Serial.println(boot_note);
-  Serial.printf("orca-deck knob: up · internal heap %u (largest %u) · psram %u\n",
+  Serial.printf("Clawd: up · internal heap %u (largest %u) · psram %u\n",
                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }

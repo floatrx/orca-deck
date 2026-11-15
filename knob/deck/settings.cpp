@@ -20,8 +20,9 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
 enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER,
-           ROW_WIFI_ADD };
-static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS};
+           ROW_WIFI_ADD, ROW_ABOUT };
+static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS,
+                                              ROW_ABOUT};
 static uint32_t wifi_asked_at = 0;  // "Add the Mac's Wi-Fi" was tapped: the password is asked on the Mac
 static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
@@ -94,7 +95,7 @@ void settings_apply()
 static String row_name(int row)
 {
   static const char *NAMES[] = {"Connection", "Wi-Fi", "Hide inactive", "Hide completed", "Haptics", "Sound",
-                                "Brightness", "Screensaver", "Add the Mac's Wi-Fi"};
+                                "Brightness", "Screensaver", "Add the Mac's Wi-Fi", "About"};
   return NAMES[row];
 }
 
@@ -117,6 +118,7 @@ static String row_value(int row)
       if (wifi_asked_at && millis() - wifi_asked_at < 30000) return "type the password on the Mac";
       return String(wifi_store_count()) + " saved · tap to add";
     case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
+    case ROW_ABOUT: return "Clawd · " + String(__DATE__).substring(0, 6);  // the device is Clawd (user, 2026-11-15)
     case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
   }
   return "";
@@ -174,7 +176,8 @@ void settings_page_refresh()
     set_text(hint, "crown: change · tap: save");
     return;
   }
-  set_text(hint, (*rows)[focus] == ROW_LINK ? "hold 2 s: forget the paired relay"
+  set_text(hint, (*rows)[focus] == ROW_LINK  ? "hold 2 s: forget the paired relay"
+                 : (*rows)[focus] == ROW_ABOUT ? "BLE name: orca-deck-knob"
                  : deck                     ? "tap: change · swipe left: back"
                                             : "tap: change · swipe down: hub");
 }
@@ -210,6 +213,7 @@ void settings_page_tap()
   }
   switch (row) {
     case ROW_LINK: return;  // forgetting takes a hold, never a tap
+    case ROW_ABOUT: return;
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
     case ROW_WIFI_ADD: {  // the bridge asks the password in a dialog on the Mac; the W line brings the network here

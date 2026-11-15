@@ -133,6 +133,7 @@ static void take_prs()
     now[p.key] = p.checks;
     auto was = last_checks.find(p.key);
     if (!first && was != last_checks.end() && was->second == "run" && (p.checks == "fail" || p.checks == "ok")) {
+      if (p.checks == "fail") pet_event(PET_PR_FAIL);  // a bug crawls in on Clawd (pet.cpp)
       if (p.checks == "fail" || !focus_is_on()) {
         banner_show_app(&app_prs, short_repo(p.key) + number_of(p.key) + (p.checks == "fail" ? " checks failed" : " checks passed"));
       }

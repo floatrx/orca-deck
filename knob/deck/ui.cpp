@@ -360,7 +360,10 @@ static void on_state(std::vector<Worktree> &list)
     for (const Agent &a : w.agents) {
       auto it = last_bucket.find(a.id);
       if (it != last_bucket.end() && it->second != a.bucket) {
+        if (a.bucket == "working") pet_event(PET_AGENT_WORKING);  // Clawd the pet reacts to Claude work (pet.cpp)
+        if (a.bucket == "done" && it->second == "working") pet_event(PET_AGENT_DONE);  // fed even in Focus
         if (a.bucket == "attention") {
+          pet_event(PET_AGENT_ATTENTION);
           pulses = 2;
           alert_w = &w, alert_a = &a;
         } else if (a.bucket == "done" && it->second == "working" && !focus_is_on()) {  // Focus: a done stays quiet
@@ -487,6 +490,7 @@ static void fly_away(const String &text)
 
 void ui_after_send(const String &agent_id, const String &sent)
 {
+  pet_event(PET_SENT);  // Clawd catches the paper plane (pet.cpp)
   fly_away(sent);
   ui_close_pages();
   String agent;
@@ -896,6 +900,8 @@ static void run_test(const String &line)
   else if (verb == "shot") screenshot();
   else if (verb == "rec") rec_start(arg);
   else if (verb == "bat") Serial.println(battery_report());
+  else if (verb == "usb") Serial.println(usb_report());
+  else if (verb == "pet") pet_test(arg);  // tests: the pet (pet.cpp)
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);
@@ -951,6 +957,7 @@ static void loop_tick(lv_timer_t *)
   jog_tick();
   wheel_tick();
   snake_tick();
+  pet_tick();
   focus_tick();
   usage_tick();
   day_tick();
@@ -1073,6 +1080,7 @@ extern "C" void ui_init(void)
   jog_create();
   wheel_create();
   snake_create();
+  pet_init();
   focus_create();
   usage_create();
   day_create();

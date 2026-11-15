@@ -66,7 +66,9 @@ static const App *current = nullptr;  // nullptr: the hub is on screen
 static bool pressed = false;
 // Boot (user, 2026-11-14): the Earth turns with a spinner in the middle until the Mac answers, then the list
 // fades in. 5 s at most: the knob works offline too.
-static lv_obj_t *spinner, *boot_label;
+static lv_obj_t *spinner, *boot_label, *boot_name, *boot_clawd;
+static lv_color_t *boot_buf;
+#define BOOT_CLAWD 64  // Clawd inside the boot spinner (user, 2026-11-15: the device is Clawd)
 static bool booting = true;
 static uint32_t boot_until = 0, linked_at = 0;
 static bool gestured = false;  // this touch was a swipe: its release must not count as a tap
@@ -263,6 +265,8 @@ static void end_boot()
   booting = false;
   lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(boot_label, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(boot_name, LV_OBJ_FLAG_HIDDEN);
+  if (boot_clawd) lv_obj_add_flag(boot_clawd, LV_OBJ_FLAG_HIDDEN);
   refresh();
   for (int slot = 0; slot < SLOTS; slot++) {
     lv_anim_t a;
@@ -279,6 +283,13 @@ static void end_boot()
 
 static void boot_tick(uint32_t now)
 {
+  static uint32_t drawn = 0;
+  if (boot_clawd && now - drawn >= 80) {  // the same Clawd as the saver's, small, waking up with the knob
+    drawn = now;
+    clawd_draw(boot_buf, BOOT_CLAWD, BOOT_CLAWD, 3, 5, (BOOT_CLAWD - 5 * 5) / 2 + 2, linked_at ? "done" : "idle", now, false,
+               lv_color_hex(0x000000));
+    lv_obj_invalidate(boot_clawd);
+  }
   bool online = false;
   if (shared_mux) {
     xSemaphoreTake(shared_mux, portMAX_DELAY);
@@ -460,6 +471,17 @@ void hub_create()
   lv_obj_set_style_arc_width(spinner, 6, LV_PART_INDICATOR);
   lv_obj_set_style_arc_color(spinner, lv_color_hex(C_ATTENTION), LV_PART_INDICATOR);
   lv_obj_set_style_arc_rounded(spinner, true, LV_PART_INDICATOR);
+  boot_buf = (lv_color_t *)ps_malloc(BOOT_CLAWD * BOOT_CLAWD * sizeof(lv_color_t));
+  if (boot_buf) {
+    boot_clawd = lv_canvas_create(page);
+    lv_canvas_set_buffer(boot_clawd, boot_buf, BOOT_CLAWD, BOOT_CLAWD, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_center(boot_clawd);
+    lv_obj_clear_flag(boot_clawd, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(boot_clawd, LV_RADIUS_CIRCLE, 0);  // round, inside the spinner: no black square on the Earth
+    lv_obj_set_style_clip_corner(boot_clawd, true, 0);
+  }
+  boot_name = make_label(page, &deck_bold_30, C_INK, -84, 220);
+  set_text(boot_name, "Clawd");
   boot_label = make_label(page, &deck_bold_16, C_INK, 76, 220);
   set_text(boot_label, "connecting…");
   for (int slot = 0; slot < SLOTS; slot++) lv_obj_set_style_opa(rows[slot], LV_OPA_TRANSP, 0);
