@@ -32,7 +32,8 @@ static lv_obj_t *page, *canvas, *zz;
 //   rim: the week's limit on the left half, the 5 h window on the right — both fill from the bottom up
 //   under Clawd: three counts (needs you · working · done); then the Mac: time · battery · CPU
 //   bottom: each limit's % and time to reset, under its own half of the rim
-static lv_obj_t *week_arc, *session_arc, *count_value[3], *count_name[3], *mac_label, *limit_value[2], *limit_name[2];
+static lv_obj_t *week_arc, *session_arc, *count_value[3], *count_name[3], *mac_label, *power_label, *limit_value[2],
+    *limit_name[2];
 static lv_color_t *buf;
 static bool shown = false, enabled = true;
 static uint32_t last_input = 0;
@@ -196,14 +197,20 @@ static void paint_info()
     snprintf(hm, sizeof(hm), "%02d:%02d", tm.tm_hour, tm.tm_min);
     line = hm;
   }
+  if (mac.cpu >= 0) line += String(line.length() ? "    " : "") + "CPU " + String(mac.cpu) + "%";
+  set_text(mac_label, line);
+  // The two batteries on their own line, named: the Mac's and the knob's.
+  String power;
   if (mac.battery >= 0) {
     const char *level = mac.battery > 80 ? LV_SYMBOL_BATTERY_FULL : mac.battery > 55 ? LV_SYMBOL_BATTERY_3
                         : mac.battery > 30 ? LV_SYMBOL_BATTERY_2 : mac.battery > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
-    line += String(line.length() ? "    " : "") + level + " " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
+    power = "Mac " + String(level) + " " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
   }
-  if (mac.cpu >= 0) line += String(line.length() ? "    " : "") + "CPU " + String(mac.cpu) + "%";
-  set_text(mac_label, line);
-  lv_obj_set_style_text_color(mac_label, lv_color_hex(mac.battery >= 0 && mac.battery < 15 && !mac.charging ? C_ATTENTION : C_MUTED), 0);
+  String knob = battery_text();
+  if (knob.length()) power += String(power.length() ? "    " : "") + "Knob " + knob;
+  set_text(power_label, power);
+  bool low = (mac.battery >= 0 && mac.battery < 15 && !mac.charging) || (battery_level() >= 0 && battery_level() < 15);
+  lv_obj_set_style_text_color(power_label, lv_color_hex(low ? C_ATTENTION : C_MUTED), 0);
 }
 
 // The loudest state among the agents; "sleep" when no relay link is alive.
@@ -309,10 +316,10 @@ void buddy_create()
     lv_obj_set_style_arc_width(arc, 7, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
     (k ? session_arc : week_arc) = arc;
-    limit_value[k] = make_label(page, &deck_bold_16, C_INK, 102, 100);
-    lv_obj_align(limit_value[k], LV_ALIGN_CENTER, k ? 60 : -60, 102);
-    limit_name[k] = make_label(page, &deck_14, C_MUTED, 122, 100);
-    lv_obj_align(limit_name[k], LV_ALIGN_CENTER, k ? 60 : -60, 122);
+    limit_value[k] = make_label(page, &deck_bold_16, C_INK, 106, 100);
+    lv_obj_align(limit_value[k], LV_ALIGN_CENTER, k ? 60 : -60, 106);
+    limit_name[k] = make_label(page, &deck_14, C_MUTED, 125, 100);
+    lv_obj_align(limit_name[k], LV_ALIGN_CENTER, k ? 60 : -60, 125);
   }
   // The agents' counts, in their states' colours.
   const char *names[3] = {"needs you", "working", "done"};
@@ -323,7 +330,8 @@ void buddy_create()
     lv_obj_align(count_name[k], LV_ALIGN_CENTER, (k - 1) * 80, 40);
     set_text(count_name[k], names[k]);
   }
-  mac_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 70, 250);  // ASCII + the battery / bolt symbols
+  mac_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 62, 250);    // the Mac's time and CPU
+  power_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 81, 260);  // ASCII + the battery / bolt symbols
   zz = lv_label_create(page);
   lv_obj_set_style_text_font(zz, &deck_bold_30, 0);
   lv_obj_set_style_text_color(zz, lv_color_hex(C_MUTED), 0);

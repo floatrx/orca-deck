@@ -16,7 +16,7 @@
 enum { T_MIC, T_FOCUS, T_SOUND, T_BRIGHT, TILES };
 static const char *const NAMES[TILES] = {"Mic", "Focus", "Sound", "Bright"};
 
-static lv_obj_t *page, *tiles[TILES], *icons[TILES], *labels[TILES], *mic_icon, *top_label, *bottom_label;
+static lv_obj_t *page, *tiles[TILES], *icons[TILES], *labels[TILES], *mic_icon, *top_label, *bottom_label, *knob_label;
 static int focus = 0;
 static bool shown = false;
 static bool sound_muted = false;
@@ -72,10 +72,13 @@ static void paint()
   if (mac.battery >= 0) {
     const char *level = mac.battery > 80 ? LV_SYMBOL_BATTERY_FULL : mac.battery > 55 ? LV_SYMBOL_BATTERY_3
                         : mac.battery > 30 ? LV_SYMBOL_BATTERY_2 : mac.battery > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
-    bottom = String(level) + " " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
+    bottom = "Mac " + String(level) + " " + String(mac.battery) + "%" + (mac.charging ? " " LV_SYMBOL_CHARGE : "");
   }
   if (mac.cpu >= 0) bottom += String(bottom.length() ? "    " : "") + "CPU " + String(mac.cpu) + "%";
   set_text(bottom_label, mac.at ? bottom : "waiting for the Mac...");
+  String knob = battery_text();
+  set_text(knob_label, knob.length() ? "Knob " + knob : "");
+  lv_obj_set_style_text_color(knob_label, lv_color_hex(battery_level() >= 0 && battery_level() < 15 ? C_ATTENTION : C_MUTED), 0);
 }
 
 void cc_open()
@@ -269,5 +272,6 @@ void cc_create()
   lv_label_set_text(icons[T_BRIGHT], LV_SYMBOL_IMAGE);
 
   top_label = make_label(page, &deck_14, C_DETAIL, -118, 220);
-  bottom_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 118, 200);
+  bottom_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 114, 220);
+  knob_label = make_label(page, &lv_font_montserrat_14, C_MUTED, 134, 170);  // the knob's own battery
 }

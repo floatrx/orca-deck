@@ -134,6 +134,10 @@ extern SemaphoreHandle_t shared_mux;
 extern String boot_note;
 int battery_pin_mv();     // battery.cpp: GPIO1 (the probe)
 String battery_report();
+void battery_tick();      // LVGL task: a reading every 10 s
+int battery_level();      // the knob's battery, %; -1 on USB or not read yet
+bool battery_charging();  // on USB (the pin then reads the USB rail, not the battery)
+String battery_text();    // "<sym> 92%" / "<bolt> USB": Montserrat labels only
 String ui_slowest_note();  // the slowest UI pass so far this run: "180 ms in Claude"  // deck.ino: "boot #3: BROWNOUT (power dipped) after 41 s up"
 extern Shared shared;
 

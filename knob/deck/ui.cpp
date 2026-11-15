@@ -951,6 +951,7 @@ static void loop_tick(lv_timer_t *)
   micmute_tick();
   prs_tick();
   wifi_app_tick();
+  battery_tick();
   cc_tick();
   dictate_tick();
   tz_persist();
