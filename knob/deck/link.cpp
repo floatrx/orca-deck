@@ -247,6 +247,69 @@ static void apply_prs(const String &body)
   xSemaphoreGive(shared_mux);
 }
 
+static void apply_feed(const String &body)
+{
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  Feed f;
+  f.id = doc["a"] | "";
+  if (!f.id.length()) return;
+  f.header = doc["h"] | "";
+  f.sub = doc["s"] | "";
+  f.note = doc["m"] | "";
+  f.note_seq = doc["mt"] | 0;
+  f.alert = doc["al"] | "";
+  f.alert_seq = doc["an"] | 0;
+  for (JsonObject p : doc["pg"].as<JsonArray>()) {
+    FeedPage page;
+    page.name = p["n"] | "";
+    page.empty = p["e"] | "";
+    page.hint = p["ht"] | "";
+    page.to = p["to"] | "";
+    page.hold = p["hd"] | 0;
+    page.tap = (p["tp"] | 0) == 1;
+    page.last = (p["last"] | 0) == 1;
+    for (JsonObject i : p["i"].as<JsonArray>()) {
+      FeedItem it;
+      it.key = i["k"] | "";
+      it.title = i["t"] | "";
+      it.detail = i["d"] | "";
+      it.badge = i["b"] | "";
+      it.color = i["c"] | C_IDLE;
+      page.items.push_back(it);
+    }
+    f.pages.push_back(page);
+  }
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  bool found = false;
+  for (Feed &old : shared.feeds) {
+    if (old.id == f.id) {
+      f.version = old.version + 1;
+      old = f;
+      found = true;
+    }
+  }
+  if (!found) {
+    f.version = 1;
+    shared.feeds.push_back(f);
+  }
+  xSemaphoreGive(shared_mux);
+}
+
+bool feed_take(const String &id, Feed &out)
+{
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  bool found = false;
+  for (const Feed &f : shared.feeds) {
+    if (f.id == id) {
+      out = f;
+      found = true;
+    }
+  }
+  xSemaphoreGive(shared_mux);
+  return found;
+}
+
 static void apply_wifi(const String &body)
 {
   JsonDocument doc;
@@ -291,6 +354,8 @@ void handle_line(const String &line, LinkKind via)
     apply_prompts(body);
   } else if (kind == 'R') {
     apply_prs(body);
+  } else if (kind == 'G') {
+    apply_feed(body);
   } else if (kind == 'W' && via != LINK_WIFI) {  // the networks ride only BLE / USB, never the air they configure
     apply_wifi(body);
   } else if (kind == 'T' && via == LINK_USB) {

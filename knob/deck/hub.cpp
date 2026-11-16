@@ -7,7 +7,12 @@
 #include <time.h>
 
 static const App *const APPS[] = {&app_deck, &app_pet, &app_usage, &app_prompts,  // Claude first, Clawd second (user, 2026-11-16)
-                                  &app_prs, &app_day, &app_focus, &app_mic, &app_timer,
+                                  &app_prs,
+                                  // the developer feed apps (app_feed.cpp), 2026-11-16 overnight; order up for review
+                                  &app_queue, &app_turns, &app_git, &app_context, &app_launch, &app_digest, &app_wrap,
+                                  &app_hands, &app_logs, &app_diff, &app_deploy, &app_ask, &app_shutter, &app_toggl,
+                                  &app_macros,
+                                  &app_day, &app_focus, &app_mic, &app_timer,
                                   &app_mac, &app_jog, &app_wheel, &app_snake, &app_clock, &app_wifi, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 static int focus = 0;  // the centre row's app
@@ -94,6 +99,7 @@ const char *hub_shown_name(const App *app)
       {&app_usage, "Ліміти"}, {&app_prompts, "Промпти"}, {&app_prs, "PR-радар"}, {&app_day, "День"}, {&app_focus, "Фокус"},
       {&app_mic, "Мікрофон"}, {&app_timer, "Таймер"}, {&app_mac, "Мак"}, {&app_jog, "Джог"}, {&app_wheel, "Колесо"},
       {&app_snake, "Змійка"}, {&app_clock, "Годинник"}, {&app_settings, "Налаштування"}};
+  if (const char *feed = feed_name(app)) return feed;
   if (settings.lang) return app->name;  // English: the apps' own names
   for (const auto &e : UA)
     if (e.app == app) return e.name;

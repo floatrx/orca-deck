@@ -33,6 +33,7 @@ static lv_color_t *eq_buf;
 static float eq_shown[EQ_BARS / 2];
 static Stage stage = CLOSED;
 static String agent_id, text;
+static String cmd_template;  // dictate_begin_cmd: the command the transcript goes into (a feed app), else a `say`
 static uint32_t started_at = 0, sent_at = 0, seen_version = 0;
 // Staged dictation for a recording (`T dictdemo listen <text>`): the next hold runs the real screens, but the
 // microphone stays off (the equalizer plays a synthetic voice), and after the tap `text` comes back as the
@@ -92,8 +93,15 @@ static void fail(const String &why)
   haptic_buzz(1);
 }
 
+void dictate_begin_cmd(const String &title, const String &cmd_json)
+{
+  dictate_begin(title, "");
+  cmd_template = cmd_json;
+}
+
 void dictate_begin(const String &title, const String &agent)
 {
+  cmd_template = "";
   agent_id = agent;
   text = "";
   set_text(title_label, title);
@@ -197,9 +205,13 @@ void dictate_tick()
       else {  // straight to the agent: no confirming tap (user, 2026-11-14)
         text = got;
         JsonDocument cmd;
-        cmd["cmd"] = "say";
-        cmd["id"] = agent_id;
-        cmd["text"] = text;
+        if (cmd_template.length() && !deserializeJson(cmd, cmd_template)) {
+          cmd["text"] = text;  // a feed app's command: the app's bridge side decides what the words do
+        } else {
+          cmd["cmd"] = "say";
+          cmd["id"] = agent_id;
+          cmd["text"] = text;
+        }
         push_command(cmd);
         haptic_click(2);
         show_stage(RESULT);
@@ -245,8 +257,9 @@ void dictate_tick()
     if (t >= r0 + RISE_MS) {  // gone: back, as after Send (the text already flew: none for the main page)
       lv_obj_set_style_arc_opa(sweep, LV_OPA_COVER, LV_PART_INDICATOR);
       String agent = agent_id;
+      bool app = cmd_template.length() > 0;
       dictate_close();
-      ui_after_send(agent);
+      if (!app) ui_after_send(agent);  // a feed app stays on screen: its note says what happened
     }
   }
 }
@@ -277,8 +290,9 @@ void dictate_tap()
     show_stage(TRANSCRIBING);
   } else if (stage == RESULT) {  // already sent: a tap just goes back sooner (the text flies off the main page)
     String agent = agent_id;
+    bool app = cmd_template.length() > 0;
     dictate_close();
-    ui_after_send(agent, text);
+    if (!app) ui_after_send(agent, text);
   } else if (stage == FAILED) {
     dictate_close();
   }

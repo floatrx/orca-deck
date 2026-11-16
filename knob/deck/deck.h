@@ -101,6 +101,23 @@ struct PrItem {
   bool mine = true, rerun = false;    // mine: authored (else a review request) · rerun: has a failed run
 };
 
+// GET /api/feeds via the relay's G lines: the feed apps (app_feed.cpp, bridge/feeds.lua).
+struct FeedItem {
+  String key, title, detail, badge;
+  uint32_t color = C_IDLE;
+};
+struct FeedPage {
+  String name, empty, hint, to;  // to: where a send goes ("→ orca-deck"); "" when the page sends nothing
+  uint8_t hold = 0;              // 0 nothing · 1 dictate · 2 an action
+  bool tap = false, last = false;  // last: open at the newest item (a log)
+  std::vector<FeedItem> items;
+};
+struct Feed {
+  String id, header, sub, note, alert;  // alert: a banner with a buzz, once per alert_seq
+  uint32_t note_seq = 0, alert_seq = 0, version = 0;
+  std::vector<FeedPage> pages;
+};
+
 // The Prompt Palette's target: a chat agent and its worktree's title.
 struct DeckTarget {
   String title, agent, bucket;
@@ -128,6 +145,7 @@ struct Shared {
   String prs_error;
   bool prs_loaded = false;
   uint32_t prs_version = 0;
+  std::vector<Feed> feeds;
 };
 
 extern SemaphoreHandle_t shared_mux;
@@ -264,6 +282,14 @@ struct App {
 };
 extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day,
     app_prompts, app_mic, app_prs, app_wifi, app_snake, app_pet;
+// app_feed.cpp — the developer feed apps, one template (.work/plans/knob-dev-apps.md)
+extern const App app_queue, app_turns, app_git, app_context, app_launch, app_digest, app_wrap, app_hands, app_logs, app_diff,
+    app_deploy, app_ask, app_shutter, app_toggl, app_macros;
+void feed_create();
+void feed_tick();
+const char *feed_name(const App *app);  // a feed app's shown name; nullptr for other apps
+String feed_report();
+bool feed_take(const String &id, Feed &out);  // a copy of the feed `id`; false when the bridge has not sent it
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -455,6 +481,7 @@ void dictation_bands(float *out);  // 32 bands, 0…1, low → high: the equaliz
 // dictate.cpp — orca-deck's hold-to-dictate screen
 void dictate_create();
 void dictate_begin(const String &title, const String &agent);
+void dictate_begin_cmd(const String &title, const String &cmd_json);  // the transcript goes as cmd_json's "text"
 void dictate_tick();
 void dictate_tap();
 void dictate_demo(const String &text);  // tests: the result's play-out, nothing sent

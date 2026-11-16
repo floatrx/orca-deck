@@ -221,7 +221,7 @@ end
 --- `say` types into a Claude session that runs with bypassed permissions, and `answer` decides for it, so both
 --- need the bearer token: any web page can open ws://localhost:7352/ws, and the WebSocket has no auth.
 function core.commandRefusal(cmd, via)
-  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus" or cmd == "pr" or cmd == "wifi_add") and via == "ws" then
+  if (cmd == "say" or cmd == "answer" or cmd == "mac" or cmd == "jog" or cmd == "focus" or cmd == "pr" or cmd == "wifi_add" or cmd == "app") and via == "ws" then
     return cmd .. " needs the bearer token: use POST /api/cmd"
   end
   return nil

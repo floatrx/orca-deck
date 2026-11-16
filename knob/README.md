@@ -223,4 +223,6 @@ external 3.5mm headphone or speaker to achieve playback"). The haptics carry the
 - `lcd_bsp.*`, `cst816.*`, `lcd_bl_pwm_bsp.*`, `lcd_config.h`, `esp_lcd_sh8601.*`, `bidi_switch_knob.*` come from the
   Waveshare ESP32-S3-Knob-Touch-LCD-1.8 demo package; `lcd_bsp.c` calls `ui_init()` instead of the LVGL demo.
   Audio pins and I2S setup in `sound.c` follow the demo's `07_Audio_Test`.
-- `deck_*.c` are Montserrat (SIL Open Font License 1.1) converted with `lv_font_conv` 1.5.2: Latin + Cyrillic.
+- `deck_*.c` are Montserrat (SIL Open Font License 1.1) converted with `lv_font_conv` 1.5.2: Latin + Cyrillic, plus
+  ↑ → ↓ ↗ − ■ ▶ from Montserrat and ● ✓ ✗ from DejaVu Sans Mono (Bitstream Vera licence; DejaVu changes public
+  domain) — the feed apps' badges. The full command is in each file's `Opts:` line.

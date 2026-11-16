@@ -33,6 +33,7 @@ static void animate(int32_t y_from, int32_t y_to, lv_opa_t opa_from, lv_opa_t op
 
 static void show(const String &name, const String &line, uint32_t c)
 {
+  Serial.printf("banner: %s · %s\n", name.c_str(), line.c_str());  // tests: snapshots never show the top layer
   lv_obj_set_style_bg_color(dot, lv_color_hex(c), 0);
   lv_obj_set_style_border_color(pill, lv_color_hex(c), 0);
   lv_obj_set_style_text_color(text, lv_color_hex(c), 0);

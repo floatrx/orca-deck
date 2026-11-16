@@ -22,6 +22,8 @@
 local DIR = debug.getinfo(1, "S").source:match("^@(.*/)")
 local core = dofile(DIR .. "core.lua")
 local demo = dofile(DIR .. "demo.lua")
+local feedsCore = dofile(DIR .. "feeds_core.lua")
+local feedsModule = dofile(DIR .. "feeds.lua")
 
 local ORCA_CLI = "/opt/homebrew/bin/orca"
 local PS_FILE = "/tmp/orca-deck-ps.json"
@@ -828,6 +830,27 @@ local function wifiAdd()
   return nil
 end
 
+-- The knob's feed apps (bridge/feeds.lua, .work/plans/knob-dev-apps.md): Queue, Turns, Git Pulse, Context, …
+-- bridge.json is read again at most every 30 s, so a token added there (togglToken) needs no reload.
+local function freshConfig()
+  local now = hs.timer.secondsSinceEpoch()
+  if now - (deckBridge.configAt or 0) >= 30 then
+    deckBridge.configAt = now
+    local ok, doc = pcall(hs.json.decode, readFile(CONFIG) or "")
+    if ok and type(doc) == "table" and doc.token == deckBridge.config.token then deckBridge.config = doc end
+  end
+  return deckBridge.config
+end
+
+deckBridge.feeds = feedsModule.new({
+  fc = feedsCore, trail = trail, readFile = readFile, nowMs = nowMs, later = later, poll = poll, go = go,
+  say = say, agentScript = agentScript, sessionIdOf = core.sessionIdOf, config = freshConfig,
+  worktrees = function() return deckBridge.worktrees end,
+  events = function() return deckBridge.events.events end,
+  prs = function() return deckBridge.prs end,
+  day = function() return deckBridge.day end,
+})
+
 local function ack(cmd, problem, note)
   return { type = "ack", v = core.PROTOCOL, cmd = cmd, ok = problem == nil, note = problem or note }
 end
@@ -867,6 +890,8 @@ local function run(message, via)
     return ack(cmd, focusCommand(message))
   elseif cmd == "pr" then
     return ack(cmd, prCommand(message))
+  elseif cmd == "app" then
+    return ack(cmd, deckBridge.feeds.command(message))
   elseif cmd == "wifi_add" then
     local problem = wifiAdd()
     return ack(cmd, problem, problem == nil and "asking on the Mac" or nil)
@@ -925,6 +950,8 @@ local function onApi(method, route, query, headers, body)
     return json(200, { v = core.PROTOCOL, groups = promptGroups() })
   elseif method == "GET" and route == "/api/prs" then
     return json(200, prsStatus())
+  elseif method == "GET" and route == "/api/feeds" then
+    return json(200, { v = core.PROTOCOL, feeds = deckBridge.feeds.all() })
   elseif method == "GET" and route == "/api/agent" then
     local detail = agentDetail(query.id)
     if not detail then return json(404, { error = "unknown agent" }) end

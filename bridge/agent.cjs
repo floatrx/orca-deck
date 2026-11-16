@@ -5,6 +5,7 @@
 //   ELECTRON_RUN_AS_NODE=1 /Applications/Orca.app/Contents/MacOS/Orca agent.cjs history <sessionId>
 //   ELECTRON_RUN_AS_NODE=1 /Applications/Orca.app/Contents/MacOS/Orca agent.cjs say <sessionId>   (text on stdin)
 //   ELECTRON_RUN_AS_NODE=1 /Applications/Orca.app/Contents/MacOS/Orca agent.cjs answer <sessionId> (JSON on stdin)
+//   ELECTRON_RUN_AS_NODE=1 /Applications/Orca.app/Contents/MacOS/Orca agent.cjs context|stop <sessionId>
 //
 // history → {"message": <newest assistant text>, "working": bool, "fence": n, "question"?: {…}} — `question` is
 //           the newest pending question the user can act on (an AskUserQuestion), as Orca's renderer finds it.
@@ -13,6 +14,8 @@
 //           session's current runtime fence.
 // answer  → {"answered": true} — stdin {"itemId", "revision", "optionId"}; agentSession.respondToQuestion with
 //           the envelope Orca's renderer builds (fingerprint method "agentSession.respondTo:question").
+// context → {"used", "window", "percentage", "model"} — the latest turn's contextUsage (the knob's Context app).
+// stop    → {"stopped": true} — agentSession.cancel without a turn id: stops what is in flight (Orca's Stop).
 // Every failure prints {"error": …} and exits 1. The text is read from stdin so it never shows up in `ps`.
 const OUT = "/Applications/Orca.app/Contents/Resources/app.asar.unpacked/out";
 // Orca moves its internals between releases (2026-11-12: shared/ → shared/agent-session/{requests,lifecycle}/):
@@ -106,7 +109,7 @@ function readStdin() {
 }
 
 (async () => {
-  if (!sessionId) throw new Error("usage: agent.cjs history|say|answer <sessionId>");
+  if (!sessionId) throw new Error("usage: agent.cjs history|context|stop|say|answer <sessionId>");
   const client = new RuntimeClient(getDefaultUserDataPath(), undefined, null, null);
   if (mode === "history") {
     const page = await tail(client);
@@ -115,6 +118,30 @@ function readStdin() {
       message: newestAssistantText(page), working: page.working === true, fence: page.fence,
       ...(question ? { question } : {}),
     }) + "\n");
+    return;
+  }
+  if (mode === "context") {  // the knob's Context app: how full the session's window is (the turn's contextUsage)
+    const page = await tail(client);
+    const used = page.latestTurn?.turn?.contextUsage?.used || {};
+    process.stdout.write(JSON.stringify({
+      used: used.usedTokens ?? null, window: used.windowTokens ?? null, percentage: used.percentage ?? null, model: used.model ?? null,
+    }) + "\n");
+    return;
+  }
+  if (mode === "stop") {  // the knob's Turns app: stop whatever the session has in flight (Orca's Stop button)
+    const page = await tail(client);
+    const fields = {};
+    const envelope = {
+      sessionId,
+      clientOperationId: `${Date.now()}-${randomBytes(16).toString("hex")}`,
+      expectedRuntimeFence: page.fence ?? null,
+      payloadFingerprint: mutation.structuredAgentSessionPayloadFingerprint({ method: "agentSession.cancel", sessionId, fields }),
+    };
+    const answer = (await client.call("agentSession.cancel", { envelope, ...fields })).result;
+    if (!answer || answer.ok !== true) {
+      throw new Error(answer?.refusal?.details?.reason || answer?.refusal?.code || "stop refused");
+    }
+    process.stdout.write(JSON.stringify({ stopped: true }) + "\n");
     return;
   }
   if (mode === "answer") {
@@ -164,7 +191,7 @@ function readStdin() {
     process.stdout.write(JSON.stringify({ sent: true, dispatch: answer.value?.submission?.dispatchState ?? null }) + "\n");
     return;
   }
-  throw new Error(`unknown mode "${mode}": use history, say or answer`);
+  throw new Error(`unknown mode "${mode}": use history, context, stop, say or answer`);
 })().catch((error) => {
   process.stdout.write(JSON.stringify({ error: String(error?.message ?? error) }) + "\n");
   process.exit(1);

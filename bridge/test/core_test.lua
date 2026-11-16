@@ -570,4 +570,50 @@ test("wifiWith: adds first, replaces the same SSID, checks WPA rules", function(
   eq(core.commandRefusal("wifi_add", "ws"), "wifi_add needs the bearer token: use POST /api/cmd")
 end)
 
+-- feeds_core.lua (the knob's feed apps)
+local fc = dofile(DIR .. "../feeds_core.lua")
+
+test("todoItems: top-level open items only, bold title, detail, the given mark", function()
+  local text = "# Todo\n\n- [ ] **Queue app** — build it\n  - [ ] Phase 1 — nested\n- [x] **Done** — no\n" ..
+    "- [ ] plain item with `code`\n- [ ] **Given** — x " .. fc.MARK .. " 21:05\n"
+  local items = fc.todoItems(text)
+  eq(#items, 3, "count")
+  eq(items[1].title, "Queue app"); eq(items[1].detail, "build it"); eq(items[1].line, 3)
+  eq(items[2].title, "plain item with code"); eq(items[2].detail, "")
+  eq(items[3].title, "Given"); eq(items[3].given, "21:05"); eq(items[3].detail, "x")
+  eq(#fc.todoItems(string.rep("- [ ] a\n", 40)), fc.QUEUE_MAX, "capped")
+end)
+
+test("markGiven: marks the line, finds a moved item, replaces an old mark", function()
+  local text = "# T\n- [ ] **A** — one\n- [ ] **B** — two\n"
+  local out = fc.markGiven(text, 3, "B", "10:00")
+  eq(out, "# T\n- [ ] **A** — one\n- [ ] **B** — two " .. fc.MARK .. " 10:00\n")
+  local moved = fc.markGiven("new line\n" .. text, 3, "B", "10:01")
+  eq(select(2, moved:gsub(fc.MARK, "")), 1, "one mark")
+  eq(moved:match("B[^\n]*"), "B** — two " .. fc.MARK .. " 10:01")
+  local again = fc.markGiven(out, 3, "B", "11:00")
+  eq(again:match("B[^\n]*"), "B** — two " .. fc.MARK .. " 11:00")
+  eq(select(2, fc.markGiven(text, 2, "Z", "x")), "item not found")
+end)
+
+test("appendItem: at the end, a newline first when missing", function()
+  eq(fc.appendItem("# T\n- [ ] **A**", "нова задача"), "# T\n- [ ] **A**\n- [ ] **нова задача**\n")
+  eq(fc.appendItem("", "x"), "- [ ] **x**\n")
+  eq(select(2, fc.appendItem("a", "  ")), "empty item")
+end)
+
+test("gitStatusOf / numstatOf / tokens / pathOf / repoRootOf / chunks", function()
+  local s = fc.gitStatusOf("# branch.oid abc\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -1\n" ..
+    "1 .M N... 100644 100644 100644 a b f.lua\n? new.txt\n")
+  eq(s.branch, "main"); eq(s.ahead, 2); eq(s.behind, 1); eq(s.dirty, 2); eq(s.upstream, "origin/main")
+  local files = fc.numstatOf("3\t1\ta.lua\n10\t0\tb.cpp\n-\t-\timg.png\n", "n.txt\n")
+  eq(files[1].path, "b.cpp"); eq(#files, 4); eq(files[4].add + files[4].del, 0)
+  eq(fc.tokens(357493), "357k"); eq(fc.tokens(1000000), "1M"); eq(fc.tokens(1500000), "1.5M")
+  eq(fc.pathOf("uuid::/Users/x/repo"), "/Users/x/repo"); eq(fc.pathOf("nope"), nil)
+  eq(fc.repoRootOf("/Users/x/repo/.git\n"), "/Users/x/repo")
+  local c = fc.chunks("Один два три. Чотири п'ять шість сім вісім.", 14)
+  eq(c[1], "Один два три."); eq(#c >= 2, true)
+  eq(fc.duration(47, true), "47 хв"); eq(fc.duration(125, false), "2 h 05")
+end)
+
 return string.format("%d passed, %d failed\n%s", passed, failed, table.concat(notes, "\n"))
