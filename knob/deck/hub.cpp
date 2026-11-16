@@ -6,19 +6,28 @@
 #include <math.h>
 #include <time.h>
 
-static const App *const APPS[] = {&app_deck, &app_pet, &app_usage, &app_prompts,  // Claude first, Clawd second (user, 2026-11-16)
-                                  &app_prs,
-                                  // the developer feed apps (app_feed.cpp), 2026-11-16 overnight; order up for review
-                                  &app_queue, &app_turns, &app_git, &app_context, &app_launch, &app_digest, &app_wrap,
-                                  &app_hands, &app_logs, &app_diff, &app_deploy, &app_ask, &app_shutter, &app_toggl,
-                                  &app_macros,
-                                  &app_day, &app_focus, &app_mic, &app_timer,
-                                  &app_mac, &app_jog, &app_wheel, &app_snake, &app_clock, &app_wifi, &app_settings};
-static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
+// The developer feed apps (app_feed.cpp) live in one folder row, «Розробка» (user, 2026-11-16: the hub had 31 rows).
+static void dev_show() {}
+static void dev_hide() {}
+static String dev_subtitle() { return L("15 apps · Queue, Git, Diff…", "15 апок · черга, гілки, дифф…"); }
+const App app_dev = {"Dev", LV_SYMBOL_DIRECTORY, 0x7AA2F7, dev_show, dev_hide, dev_subtitle, nullptr, nullptr, nullptr, nullptr};
+
+static const App *const MAIN_APPS[] = {&app_deck, &app_pet, &app_usage, &app_prompts,  // Claude first, Clawd second (user, 2026-11-16)
+                                       &app_prs, &app_dev, &app_day, &app_focus, &app_mic, &app_timer,
+                                       &app_mac, &app_jog, &app_wheel, &app_snake, &app_clock, &app_wifi, &app_settings};
+static const App *const DEV_APPS[] = {&app_queue, &app_turns, &app_git, &app_context, &app_launch, &app_digest, &app_wrap,
+                                      &app_hands, &app_logs, &app_diff, &app_deploy, &app_ask, &app_shutter, &app_toggl,
+                                      &app_macros};
+static const int MAIN_COUNT = sizeof(MAIN_APPS) / sizeof(MAIN_APPS[0]);
+static const int DEV_COUNT = sizeof(DEV_APPS) / sizeof(DEV_APPS[0]);
+static bool in_dev = false;  // the hub shows the folder's list
+static int main_focus = 0;   // the hub's row while the folder is open: swipe down comes back to it
+#define APPS (in_dev ? DEV_APPS : MAIN_APPS)
+#define APP_COUNT (in_dev ? DEV_COUNT : MAIN_COUNT)
 static int focus = 0;  // the centre row's app
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
-static lv_obj_t *page, *link_label;
+static lv_obj_t *page, *link_label, *folder_label;
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
 // The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
 static lv_obj_t *hands[SLOTS][2];
@@ -75,6 +84,14 @@ static void clock_face(int slot, bool on)
   }
 }
 static const App *current = nullptr;  // nullptr: the hub is on screen
+
+// The folder's name over its list, so it never reads as the hub itself (wayfinding: where am I).
+static void folder_title()
+{
+  if (!folder_label) return;
+  set_text(folder_label, settings.lang ? "DEV" : "РОЗРОБКА");
+  in_dev ? lv_obj_clear_flag(folder_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(folder_label, LV_OBJ_FLAG_HIDDEN);
+}
 static bool pressed = false;
 // Boot (user, 2026-11-14): the Earth turns with a spinner in the middle until the Mac answers, then the list
 // fades in. 5 s at most: the knob works offline too.
@@ -99,6 +116,7 @@ const char *hub_shown_name(const App *app)
       {&app_usage, "Ліміти"}, {&app_prompts, "Промпти"}, {&app_prs, "PR-радар"}, {&app_day, "День"}, {&app_focus, "Фокус"},
       {&app_mic, "Мікрофон"}, {&app_timer, "Таймер"}, {&app_mac, "Мак"}, {&app_jog, "Джог"}, {&app_wheel, "Колесо"},
       {&app_snake, "Змійка"}, {&app_clock, "Годинник"}, {&app_settings, "Налаштування"}};
+  if (app == &app_dev) return settings.lang ? "Dev" : "Розробка";
   if (const char *feed = feed_name(app)) return feed;
   if (settings.lang) return app->name;  // English: the apps' own names
   for (const auto &e : UA)
@@ -144,8 +162,31 @@ static void refresh()
 
 static void open_app(int i);
 
+static bool in_list(const App *const *list, int count, const App *app)
+{
+  for (int i = 0; i < count; i++)
+    if (list[i] == app) return true;
+  return false;
+}
+
+// Points the hub at the list that holds `app` (a banner may open an app in the folder from anywhere).
+static void list_for(const App *app)
+{
+  bool dev = in_list(DEV_APPS, DEV_COUNT, app);
+  if (dev && !in_dev) {
+    for (int i = 0; i < MAIN_COUNT; i++)
+      if (MAIN_APPS[i] == &app_dev) main_focus = i;
+  }
+  if (dev != in_dev) {
+    in_dev = dev;
+    focus = 0;
+    folder_title();
+  }
+}
+
 void hub_open(const App *app)
 {
+  list_for(app);
   for (int i = 0; i < APP_COUNT; i++) {
     if (APPS[i] != app) continue;
     if (current == app) return;
@@ -158,6 +199,15 @@ void hub_open(const App *app)
 static void open_app(int i)
 {
   if (i < 0 || i >= APP_COUNT) return;
+  if (APPS[i] == &app_dev) {  // the folder: its list replaces the hub's, the crown starts at its top
+    main_focus = i;
+    in_dev = true;
+    focus = 0;
+    haptic_click();
+    folder_title();
+    refresh();
+    return;
+  }
   focus = i;
   current = APPS[i];
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
@@ -243,7 +293,13 @@ static void swipe(lv_dir_t dir)
   if (dir == LV_DIR_BOTTOM) {
     if (current) {
       haptic_home();
-      hub_home();
+      hub_home();  // an app in the folder comes back to the folder
+    } else if (in_dev) {
+      in_dev = false;
+      focus = main_focus;
+      haptic_home();
+      folder_title();
+      refresh();
     }
     return;
   }
@@ -370,7 +426,7 @@ String hub_report()
   if (current == &app_mic) return "Mic " + micmute_report();
   if (current == &app_prs) return "PRs " + prs_report();
   if (current == &app_wifi) return "Wi-Fi " + wifi_app_report();
-  return current ? String(current->name) : (booting ? "hub(boot)" : "hub") + globe_report();
+  return current ? String(current->name) : (booting ? "hub(boot)" : in_dev ? "hub/dev" : "hub") + globe_report();
 }
 
 void hub_test(const String &verb, const String &arg)
@@ -393,11 +449,16 @@ void hub_test(const String &verb, const String &arg)
   } else if (verb == "home") {
     hub_home();
   } else if (verb == "open") {
-    for (int i = 0; i < APP_COUNT; i++) {
-      if (arg == APPS[i]->name) {
-        if (current) hub_home();
-        open_app(i);
-      }
+    const App *found = nullptr;
+    for (int i = 0; i < MAIN_COUNT; i++)
+      if (arg == MAIN_APPS[i]->name) found = MAIN_APPS[i];
+    for (int i = 0; i < DEV_COUNT; i++)
+      if (arg == DEV_APPS[i]->name) found = DEV_APPS[i];
+    if (found) {
+      if (current) hub_home();
+      list_for(found);
+      for (int i = 0; i < APP_COUNT; i++)
+        if (APPS[i] == found) open_app(i);
     }
   }
 }
@@ -488,6 +549,9 @@ void hub_create()
     if (!mid) lv_obj_add_flag(sub, LV_OBJ_FLAG_HIDDEN);
   }
   link_label = make_label(page, &deck_14, C_MUTED, 160, 120);
+  folder_label = make_label(page, &deck_bold_16, 0x7AA2F7, -158, 140);
+  lv_obj_set_style_text_letter_space(folder_label, 2, 0);
+  lv_obj_add_flag(folder_label, LV_OBJ_FLAG_HIDDEN);
 
   spinner = lv_spinner_create(page, 1100, 70);
   lv_obj_set_size(spinner, 96, 96);
