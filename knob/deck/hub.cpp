@@ -30,6 +30,14 @@ static const int SLOTS = 5;  // rows on screen: the centre one and two on each s
 static lv_obj_t *page, *link_label, *folder_label, *hub_rim;
 static lv_obj_t *counts[5];  // the list's badge counters, one per slot
 static Accel hub_accel;
+// The agents round the left rim of the hub: one short arc per agent in its state's colour (the right rim is the
+// scroll indicator). Working arcs breathe.
+#define RING_MAX 12
+static lv_obj_t *ring_arcs[RING_MAX];
+static uint8_t ring_working[RING_MAX];
+// The app switcher: the apps opened last, newest first. Swipe left / right in the hub opens the one before the last,
+// so two swipes (down, sideways) flip between two apps.
+static const App *recents[6];
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
 // The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
 static lv_obj_t *hands[SLOTS][2];
@@ -86,7 +94,9 @@ static void clock_face(int slot, bool on)
   }
 }
 static const App *current = nullptr;  // nullptr: the hub is on screen
-static lv_point_t press_at = {180, 180};  // where the finger came down: the grid opens the icon under it
+static lv_point_t press_at = {180, 180};
+static void smart_focus();
+static void list_for(const App *app);  // where the finger came down: the grid opens the icon under it
 
 // The folder's name over its list, so it never reads as the hub itself (wayfinding: where am I).
 static void folder_title()
@@ -174,6 +184,37 @@ static void set_count(lv_obj_t *label, int n, uint32_t color)
   lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void ring_paint()
+{
+  std::vector<Agent> agents = deck_all_agents();
+  int n = min((int)agents.size(), RING_MAX);
+  const int SEG = 14, GAP = 4;  // degrees
+  int span = n * SEG + (n - 1) * GAP, start = 180 - span / 2;  // centred on 9 o'clock
+  for (int k = 0; k < RING_MAX; k++) {
+    if (k >= n) {
+      lv_obj_add_flag(ring_arcs[k], LV_OBJ_FLAG_HIDDEN);
+      continue;
+    }
+    const Agent &a = agents[k];
+    int from = start + k * (SEG + GAP);
+    lv_arc_set_bg_angles(ring_arcs[k], from, from + SEG);
+    lv_obj_set_style_arc_color(ring_arcs[k], lv_color_hex(color_of(a.bucket)), LV_PART_MAIN);
+    ring_working[k] = a.bucket == "working";
+    lv_obj_set_style_arc_opa(ring_arcs[k], a.bucket == "idle" ? LV_OPA_40 : LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(ring_arcs[k], LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void ring_breathe(uint32_t now)
+{
+  static uint32_t last = 0;
+  if (now - last < 80) return;
+  last = now;
+  lv_opa_t opa = (lv_opa_t)(150 + 105 * (0.5f + 0.5f * sinf(now / 380.0f)));
+  for (int k = 0; k < RING_MAX; k++)
+    if (ring_working[k] && !lv_obj_has_flag(ring_arcs[k], LV_OBJ_FLAG_HIDDEN)) lv_obj_set_style_arc_opa(ring_arcs[k], opa, LV_PART_MAIN);
+}
+
 static void refresh()
 {
   if (!page || booting || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
@@ -183,6 +224,7 @@ static void refresh()
   grid_show(settings.hub_grid);
   if (settings.hub_grid) grid_set(APPS, APP_COUNT, focus);
   rim_set(hub_rim, focus, APP_COUNT, settings.hub_grid ? 7 : 5);
+  if (shared_mux) ring_paint();
   for (int slot = 0; slot < SLOTS; slot++) {
     int i = focus + slot - SLOTS / 2;
     if (settings.hub_grid || i < 0 || i >= APP_COUNT) {
@@ -218,19 +260,13 @@ static void refresh()
 
 static void open_app(int i);
 
-// Points the hub at the list that holds `app` (a banner may open an app in the folder from anywhere).
-static void list_for(const App *app)
+static void remember_recent(const App *app)
 {
-  bool dev = in_list(DEV_APPS, DEV_COUNT, app);
-  if (dev && !in_dev) {
-    for (int i = 0; i < MAIN_COUNT; i++)
-      if (MAIN_APPS[i] == &app_dev) main_focus = i;
-  }
-  if (dev != in_dev) {
-    in_dev = dev;
-    focus = 0;
-    folder_title();
-  }
+  int at = 5;
+  for (int k = 0; k < 6; k++)
+    if (recents[k] == app) at = k;
+  for (int k = at; k > 0; k--) recents[k] = recents[k - 1];
+  recents[0] = app;
 }
 
 // An app outside both lists (the notification centre): it opens over the hub, swipe down comes back.
@@ -274,6 +310,7 @@ static void open_app(int i)
   if (settings.hub_grid) grid_place(i, bx, by);
   focus = i;
   current = APPS[i];
+  remember_recent(current);
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
   haptic_click();
   current->show();
@@ -299,6 +336,46 @@ bool hub_pressing() { return pressed || millis() < test_press_until; }
 // Any input while the screensaver is up only wakes the knob, into the hub.
 static void end_boot();
 
+// Points the hub at the list that holds `app` (a banner may open an app in the folder from anywhere).
+static void list_for(const App *app)
+{
+  bool dev = in_list(DEV_APPS, DEV_COUNT, app);
+  if (dev && !in_dev) {
+    for (int i = 0; i < MAIN_COUNT; i++)
+      if (MAIN_APPS[i] == &app_dev) main_focus = i;
+  }
+  if (dev != in_dev) {
+    in_dev = dev;
+    focus = 0;
+    folder_title();
+  }
+}
+
+// What the hub turns to when the knob wakes (user, 2026-11-16 ideas round: «розумний верх»): an agent waiting on
+// you → Claude; the first wake of the morning (06–12) → the Digest; the first of the evening (18–24) → Wrap-up.
+// Each time slot once a day, so the hub does not keep moving under a thumb.
+static void smart_focus()
+{
+  int waiting = 0;
+  for (const Agent &a : deck_all_agents()) waiting += a.bucket == "attention";
+  const App *want = nullptr;
+  if (waiting) {
+    want = &app_deck;
+  } else if (time(nullptr) > 1700000000) {
+    static int morning_day = -1, evening_day = -1;
+    time_t local = time(nullptr) + tz_offset_min() * 60;
+    struct tm t;
+    gmtime_r(&local, &t);
+    if (t.tm_hour >= 6 && t.tm_hour < 12 && morning_day != t.tm_yday) morning_day = t.tm_yday, want = &app_digest;
+    else if (t.tm_hour >= 18 && evening_day != t.tm_yday) evening_day = t.tm_yday, want = &app_wrap;
+  }
+  if (!want) return;
+  list_for(want);
+  for (int i = 0; i < APP_COUNT; i++)
+    if (APPS[i] == want) focus = i;
+  Serial.printf("hub: smart focus → %s\n", want->name);
+}
+
 static bool wake()
 {
   if (booting) {  // a touch during boot skips it
@@ -309,6 +386,7 @@ static bool wake()
   if (!buddy_is_shown()) return false;
   buddy_hide();
   haptic_home();
+  if (!current) smart_focus();
   hub_home();
   return true;
 }
@@ -343,11 +421,33 @@ static void tap()
   if (current->tap) current->tap();
 }
 
+// A hold on an app in the hub is its quick action (user, 2026-11-16 ideas round): the app opens and does what its own
+// hold does — Claude and Queue start a dictation, the Launcher dictates a new agent's prompt, Clawd is stroked. Mic
+// and Focus flip right in the hub, without opening.
+static void quick_action()
+{
+  const App *app = APPS[focus];
+  if (app == &app_dev) return;  // a folder has no action of its own
+  if (app == &app_mic) {
+    mic_toggle();
+    haptic_click(2);
+    return refresh();
+  }
+  if (app == &app_focus) {
+    focus_toggle();
+    haptic_click(2);
+    return refresh();
+  }
+  open_app(focus);
+  if (current == app && app->hold) app->hold();
+}
+
 static void hold()
 {
   if (wake()) return;
   if (cc_is_open()) return cc_hold();
-  if (current && current->hold) current->hold();
+  if (!current) return quick_action();
+  if (current->hold) current->hold();
 }
 
 static void swipe(lv_dir_t dir)
@@ -377,6 +477,7 @@ static void swipe(lv_dir_t dir)
     return;
   }
   if (current && current->swipe) current->swipe(dir);
+  else if (!current && (dir == LV_DIR_LEFT || dir == LV_DIR_RIGHT) && recents[1]) hub_open(recents[1]);  // the switcher
 }
 
 // LVGL sends a click on release even after a swipe: a quick swipe down went home, then the click reopened the app.
@@ -420,6 +521,7 @@ static void fade_row(void *row, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)ro
 static void end_boot()
 {
   booting = false;
+  smart_focus();
   lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(boot_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(boot_name, LV_OBJ_FLAG_HIDDEN);
@@ -476,6 +578,7 @@ void hub_tick()
     globe_tick(now);
     if (settings.hub_grid) grid_tick(now);
     else draw_clawds(now);
+    ring_breathe(now);
   }
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
   last = now;
@@ -501,7 +604,8 @@ String hub_report()
   if (current == &app_mic) return "Mic " + micmute_report();
   if (current == &app_prs) return "PRs " + prs_report();
   if (current == &app_wifi) return "Wi-Fi " + wifi_app_report();
-  return current ? String(current->name) : (booting ? "hub(boot)" : in_dev ? "hub/dev" : "hub") + (settings.hub_grid ? " " + grid_report() : "") + globe_report();
+  String rec = recents[1] ? String(" prev=") + recents[1]->name : "";
+  return current ? String(current->name) + rec : (booting ? "hub(boot)" : in_dev ? "hub/dev" : "hub") + (settings.hub_grid ? " " + grid_report() : "") + globe_report();
 }
 
 void hub_test(const String &verb, const String &arg)
@@ -642,6 +746,17 @@ void hub_create()
     lv_obj_add_flag(count, LV_OBJ_FLAG_HIDDEN);
   }
   hub_rim = rim_create(page);
+  for (int k = 0; k < RING_MAX; k++) {
+    lv_obj_t *arc = ring_arcs[k] = lv_arc_create(page);
+    lv_obj_set_size(arc, 350, 350);
+    lv_obj_center(arc);
+    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+    lv_obj_remove_style(arc, NULL, LV_PART_INDICATOR);
+    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(arc, 5, LV_PART_MAIN);
+    lv_obj_set_style_arc_rounded(arc, true, LV_PART_MAIN);
+    lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
+  }
   grid_create(page);
   link_label = make_label(page, &deck_14, C_MUTED, 160, 120);
   folder_label = make_label(page, &deck_bold_16, 0x7AA2F7, -158, 140);

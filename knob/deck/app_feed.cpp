@@ -324,10 +324,11 @@ void feed_tick()
       Feed f;
       if (!feed_take(DEFS[i].id, f)) continue;  // a feed with no alert yet still counts as seen: its first one shows
       FeedState &s = states[i];
-      bool quiet = focus_is_on() && DEFS[i].app != &app_hands && DEFS[i].app != &app_deploy;  // Focus: only the loud ones
+      bool quiet = (focus_is_on() || night_now()) && DEFS[i].app != &app_hands && DEFS[i].app != &app_deploy;  // Focus, night: only the loud ones
       if (s.alert_known && f.alert_seq != s.alert_seen && f.alert.length() && !quiet) {
         banner_show_app(DEFS[i].app, f.alert);
-        haptic_buzz(2);
+        bool loud = DEFS[i].app == &app_hands || DEFS[i].app == &app_deploy;
+        haptic_pattern(loud ? HAPTIC_ALERT : HAPTIC_NEEDS_YOU);
       }
       s.alert_seen = f.alert_seq;
       s.alert_known = true;

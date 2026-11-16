@@ -229,6 +229,8 @@ void haptic_click(int times = 1);
 void haptic_buzz(int times = 1);
 void haptic_sample();
 void haptic_home();  // the hub's own feel: a ramp down landing on a click
+enum HapticPattern { HAPTIC_DONE, HAPTIC_NEEDS_YOU, HAPTIC_ALERT };
+void haptic_pattern(HapticPattern kind);  // the haptic language: done / needs-you / alert feel different
 String haptic_report();
 uint32_t haptic_plays();  // every haptic asked for so far: the hub's "every gesture answers" check
 
@@ -243,6 +245,7 @@ struct Settings {
   uint8_t saver = 15;         // screensaver after this many seconds idle; 0 off
   uint8_t lang = 0;           // 0 Ukrainian · 1 English (user, 2026-11-16: «вибір мови»)
   bool hub_grid = false;      // the hub as a round-icon grid (Apple Watch-like) instead of the list
+  bool night = true;          // 00:00–10:00: dim, and a done stays quiet (with Clawd's sleep)
 };
 // The UI's words in the chosen language: L("English", "Українська").
 inline const char *L(const char *en, const char *ua) { extern Settings settings; return settings.lang ? en : ua; }
@@ -411,6 +414,7 @@ void mic_toggle();
 void focus_toggle();    // app_focus.cpp
 void settings_adjust_brightness(int step);  // settings.cpp: ±5 % a step, ±1 % under 10, 1–100, live (not saved)
 void settings_save();
+bool night_now();  // Night mode is on and it is 00:00–10:00 on the Mac's clock
 String settings_report();
 #define BRIGHT_MIN 1
 #define BRIGHT_STEP 5

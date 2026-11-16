@@ -85,3 +85,30 @@ void haptic_home()
 }
 
 void haptic_sample() { haptic_click(1); }
+
+// The haptic language (user, 2026-11-16 ideas round): each kind of news has its own feel, so the wrist knows which it
+// is without a look. DRV2605 library effects, strongest first per Haptics level (3, 2, 1):
+//   done      a light double click — something finished, nothing to do now
+//   needs-you two strong pulses — an agent waits on you
+//   alert     one long alert — Claude took the Mac, a deploy failed
+static const uint8_t PATTERNS[][3][3] = {
+    {{10, 0, 0}, {11, 0, 0}, {11, 0, 0}},     // done: Double Click 100 % / 60 %
+    {{52, 52, 0}, {53, 53, 0}, {54, 54, 0}},  // needs-you: Pulsing Strong 1 / 2 / Pulsing Medium 1, twice
+    {{15, 0, 0}, {15, 0, 0}, {47, 47, 0}},    // alert: 750 ms Alert; at level 1 two buzzes
+};
+
+void haptic_pattern(HapticPattern kind)
+{
+  rec_event(kind == HAPTIC_DONE ? "done" : kind == HAPTIC_NEEDS_YOU ? "needs-you" : "alert");
+  plays++;
+  sound_buzz(kind == HAPTIC_DONE ? 1 : 2);
+  if (!settings.haptics) return;
+  const uint8_t *seq = PATTERNS[kind][3 - settings.haptics];
+  uint8_t reg = 0x04;
+  for (int k = 0; k < 3 && seq[k] && reg < 0x0B; k++) {
+    if (k) drv_write(reg++, 0x80 | 12);  // 120 ms between pulses
+    drv_write(reg++, seq[k]);
+  }
+  drv_write(reg, 0x00);
+  drv_write(0x0C, 0x01);  // GO
+}

@@ -366,7 +366,7 @@ static void on_state(std::vector<Worktree> &list)
           pet_event(PET_AGENT_ATTENTION);
           pulses = 2;
           alert_w = &w, alert_a = &a;
-        } else if (a.bucket == "done" && it->second == "working" && !focus_is_on()) {  // Focus: a done stays quiet
+        } else if (a.bucket == "done" && it->second == "working" && !focus_is_on() && !night_now()) {  // Focus, night: a done stays quiet
           pulses = max(pulses, 1);
           if (!alert_a || alert_a->bucket != "attention") alert_w = &w, alert_a = &a;
           fresh_done_worktree = w.id;
@@ -406,7 +406,7 @@ static void on_state(std::vector<Worktree> &list)
     const Agent *shown = shown_agent(worktrees[index_shown]);
     if (shown && shown->id == fresh_done_agent) bloom_start();
   }
-  if (pulses) haptic_buzz(pulses);
+  if (pulses) haptic_pattern(pulses >= 2 ? HAPTIC_NEEDS_YOU : HAPTIC_DONE);
   if (alert_a && hub_current() != &app_deck) banner_show(alert_w->id, alert_a->id, ui_title(*alert_w), alert_a->bucket);
 }
 
@@ -908,6 +908,7 @@ static void run_test(const String &line)
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);
   else if (verb == "feed") Serial.println(feed_report());
+  else if (verb == "hpat") haptic_pattern((HapticPattern)arg.toInt());  // tests: 0 done · 1 needs-you · 2 alert
   else if (verb == "hubgrid") settings.hub_grid = arg != "off", hub_home();  // tests: the grid without saving it  // tests: the open feed app (app_feed.cpp)
   else if (verb == "snakelevel") snake_test_level(arg.toInt());  // tests: a level's walls without playing it  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));

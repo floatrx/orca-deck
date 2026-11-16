@@ -10,6 +10,7 @@
 Settings settings;
 
 static Preferences prefs;
+static bool night_override = false;  // the brightness was turned by hand tonight: Night mode does not dim it
 static lv_obj_t *page, *title, *hint, *rim;
 static const int VISIBLE = 5;
 static lv_obj_t *names[VISIBLE], *values[VISIBLE];
@@ -20,9 +21,9 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
 enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER,
-           ROW_WIFI_ADD, ROW_ABOUT, ROW_VACATION, ROW_LANG, ROW_HUB };
+           ROW_WIFI_ADD, ROW_ABOUT, ROW_VACATION, ROW_LANG, ROW_HUB, ROW_NIGHT };
 static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_HUB, ROW_SAVER, ROW_HAPTICS, ROW_SOUND,
-                                              ROW_BRIGHTNESS, ROW_LANG, ROW_VACATION, ROW_ABOUT};
+                                              ROW_BRIGHTNESS, ROW_NIGHT, ROW_LANG, ROW_VACATION, ROW_ABOUT};
 static uint32_t wifi_asked_at = 0;  // "Add the Mac's Wi-Fi" was tapped: the password is asked on the Mac
 static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
@@ -40,6 +41,7 @@ void settings_load()
   settings.saver = prefs.getUChar("saver", settings.saver);
   settings.lang = prefs.getUChar("lang", settings.lang);
   settings.hub_grid = prefs.getBool("hubGrid", settings.hub_grid);
+  settings.night = prefs.getBool("night", settings.night);
   prefs.end();
 }
 
@@ -62,6 +64,7 @@ void settings_adjust_brightness(int step)
   next = max(BRIGHT_MIN, min(100, next));
   if (next == settings.brightness) return;
   settings.brightness = next;
+  if (night_now()) night_override = true;  // a hand on the brightness at night: the dimming steps aside till morning
   settings_apply();
   haptic_tick();
 }
@@ -80,6 +83,7 @@ static void save()
   prefs.putUChar("saver", settings.saver);
   prefs.putUChar("lang", settings.lang);
   prefs.putBool("hubGrid", settings.hub_grid);
+  prefs.putBool("night", settings.night);
   prefs.end();
 }
 
@@ -90,9 +94,27 @@ void settings_set_haptics(int level)
   haptic_sample();
 }
 
+// Night mode (user, 2026-11-16 ideas round: «нічний режим … синхронно зі сном Clawd»): 00:00–10:00 on the Mac's clock
+// the screen dims to NIGHT_BRIGHT and a done stays quiet. Turning the brightness by hand at night wins until morning.
+#define NIGHT_END_H 10
+#define NIGHT_BRIGHT 15
+
+bool night_now()
+{
+  if (!settings.night) return false;
+  time_t now = time(nullptr);
+  if (now < 1700000000) return false;  // no clock from the Mac yet
+  time_t local = now + tz_offset_min() * 60;
+  struct tm t;
+  gmtime_r(&local, &t);
+  return t.tm_hour < NIGHT_END_H;
+}
+
 void settings_apply()
 {
-  setUpdutySubdivide(255 * settings.brightness / 100);
+  int bright = settings.brightness;
+  if (night_now() && !night_override) bright = min(bright, NIGHT_BRIGHT);
+  setUpdutySubdivide(255 * bright / 100);
   sound_set_level(settings.sound);
 }
 
@@ -100,7 +122,7 @@ static String row_name(int row)
 {
   const char *NAMES[] = {L("Connection", "Зв’язок"), "Wi-Fi", L("Hide inactive", "Ховати неактивні"), L("Hide completed", "Ховати завершені"), L("Haptics", "Вібро"), L("Sound", "Звук"),
                                 L("Brightness", "Яскравість"), L("Screensaver", "Заставка"), L("Add the Mac's Wi-Fi", "Додати Wi-Fi Мака"), L("About", "Про пристрій"), L("Clawd vacation", "Відпустка Clawd"),
-                        "Мова / Language", L("Hub layout", "Вигляд хабу")};
+                        "Мова / Language", L("Hub layout", "Вигляд хабу"), L("Night mode", "Нічний режим")};
   return NAMES[row];
 }
 
@@ -125,6 +147,7 @@ static String row_value(int row)
     case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
     case ROW_LANG: return settings.lang ? "English" : "Українська";
     case ROW_HUB: return settings.hub_grid ? L("grid", "сітка") : L("list", "список");
+    case ROW_NIGHT: return settings.night ? (night_now() ? L("on · now", "увімк · зараз") : L("00:00–10:00", "00:00–10:00")) : L("off", "вимк");
     case ROW_VACATION: return pet_vacation() ? L("time stands still", "час стоїть") : L("off", "вимкнена");  // the pet's clock frozen (pet.cpp)
     case ROW_ABOUT: return String("Clawd · ") + String(__DATE__).substring(0, 6);  // the device is Clawd (user, 2026-11-15)
     case ROW_SAVER: return settings.saver == 0 ? L("off", "вимк") : settings.saver >= 60 ? L("after 1 min", "через 1 хв") : L("after ", "через ") + String(settings.saver) + L(" s", " с");
@@ -227,6 +250,13 @@ void settings_page_tap()
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
     case ROW_VACATION: pet_action(PET_VACATION); haptic_click(); settings_page_refresh(); return;
+    case ROW_NIGHT:
+      settings.night = !settings.night;
+      save();
+      settings_apply();
+      haptic_click();
+      settings_page_refresh();
+      return;
     case ROW_HUB:  // two values: one tap flips them, like a switch (user, 2026-11-16: the Apple Watch-like grid)
       settings.hub_grid = !settings.hub_grid;
       save();
@@ -268,6 +298,17 @@ void settings_page_hold()
 
 void settings_tick()
 {
+  static uint32_t night_check = 0;
+  static bool was_night = false;
+  if (millis() - night_check > 20000) {  // the night starts and ends on its own
+    night_check = millis();
+    bool n = night_now();
+    if (n != was_night) {
+      was_night = n;
+      if (!n) night_override = false;
+      settings_apply();
+    }
+  }
   if (!forget_hold_from) return;
   if (!hub_pressing() || !settings_page_open()) {
     forget_hold_from = 0;  // let go early: nothing happens
