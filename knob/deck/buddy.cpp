@@ -283,6 +283,9 @@ void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const
   else if (react == PET_REACT_TYPING) mood = "working";
   else if (react == PET_REACT_LOVE) mood = "love";  // eyes closed, content (the hearts come from the overlay)
   else if (look && look->sleeping) mood = "sleep";
+  // Woken up while every agent is done (the agents' "sleep"): he is up, so he plays, not lies in bed (user, 2026-11-16:
+  // «розбудив … іконка досі ліжечко … очікував, що він … стрибати, ходити»).
+  else if (look && mood == "sleep") mood = "play";
   char m[ROWS][COLS + 1];
   for (int r = 0; r < ROWS; r++) memcpy(m[r], SPRITE[r], COLS + 1);
   auto set = [&](int r, int c, char v) { if (r >= 0 && r < ROWS && c >= 0 && c < COLS) m[r][c] = v; };
@@ -318,6 +321,17 @@ void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const
   } else if (mood == "ghost") {  // dead: he floats, pale, with x eyes (drawn below)
     dy = -(int)(ph * 0.4f + sinf(t * 1.5f) * ph * 0.25f);
     set(1, 5, '#'), set(1, 12, '#');
+  } else if (mood == "walk") {  // the app walks him across the screen: legs step, a little bounce each step
+    bool step = (now / 200) % 2;
+    for (int c : {4, 6, 11, 13}) set(4, c, '.');
+    for (int c : step ? std::initializer_list<int>{4, 6, 11, 13} : std::initializer_list<int>{3, 5, 12, 14}) set(4, c, '#');
+    dy = step ? -max(1, (int)(ph * 0.15f)) : 0;
+  } else if (mood == "play") {  // awake with nothing to do: a hop every ~2.6 s, eyes looking about between hops
+    float phase = fmodf(t, 2.6f);
+    if (phase < 0.42f) dy = -(int)(sinf(phase / 0.42f * M_PI) * ph * 1.1f);
+    else dy = (int)(sinf(t * 2) * ph * 0.12f);
+    bool left = fmodf(t, 5.2f) < 2.6f;
+    if (phase > 0.6f && phase < 2.2f) set(1, 5, '#'), set(1, 12, '#'), set(1, left ? 4 : 6, '.'), set(1, left ? 11 : 13, '.');
   } else {  // idle: a slow bob and a blink every ~4 s
     dy = (int)(sinf(t * 2) * ph * 0.15f);
     if (fmodf(t, 4.0f) > 3.85f) set(1, 5, '#'), set(1, 12, '#');

@@ -312,7 +312,7 @@ void hub_tick();
 void hub_open(const App *app);
 const char *hub_shown_name(const App *app);  // the app's name on screen (Ukrainian)
 
-// ux.cpp — shared UX pieces: the rim scroll indicator, the crown's acceleration, the app-open bloom
+// ux.cpp — shared UX pieces: the rim scroll indicator, the crown's acceleration
 struct Accel {
   uint32_t at = 0;
   int dir = 0;
@@ -321,7 +321,6 @@ lv_obj_t *rim_create(lv_obj_t *parent);
 void rim_set(lv_obj_t *arc, int pos, int count, int visible);
 int accel_step(Accel &a, int step);
 int crown_rate();  // ui.cpp: physical detents in the last 150 ms
-void bloom_open(int x, int y, uint32_t color);  // centre-relative px
 
 // banner.cpp — the notification centre: the banners' history
 void banner_history_open(const String &key);

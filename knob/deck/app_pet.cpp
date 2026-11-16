@@ -158,10 +158,26 @@ static void paint()
   }
 }
 
+// Awake and free (no agent working or waiting, no reaction playing), he walks the screen left and right and hops at
+// the turns (user, 2026-11-16: «очікував, що він … стрибати, ходити по екрану»). An egg, a sleeper or a ghost stays.
+#define WANDER_PX 40
 static void draw(uint32_t now)
 {
   PetLook l = pet_look();
-  clawd_draw(buf, CW, CH, PW, PH, BASE_Y, claude_mood(), now, true, lv_color_hex(C_BG), true, pet_born() ? &l : nullptr);
+  String mood = claude_mood();
+  bool free = pet_born() && l.stage != PET_EGG && l.stage != PET_DEAD && !l.sleeping && l.reaction == PET_REACT_NONE &&
+              (mood == "idle" || mood == "sleep" || mood == "done");
+  static float x = 0;
+  float target = 0;
+  if (free) {
+    float t = now / 1000.0f;
+    target = WANDER_PX * sinf(t * 0.55f);
+    float speed = WANDER_PX * 0.55f * fabsf(cosf(t * 0.55f));  // px/s along the path
+    mood = speed > 9 ? "walk" : "play";  // walking mid-path, hopping where he turns
+  }
+  x += (target - x) * 0.15f;  // back to the middle gently when he stops being free
+  lv_obj_align(canvas, LV_ALIGN_CENTER, (int)x, -26);
+  clawd_draw(buf, CW, CH, PW, PH, BASE_Y, mood, now, true, lv_color_hex(C_BG), true, pet_born() ? &l : nullptr);
   lv_obj_invalidate(canvas);
 }
 

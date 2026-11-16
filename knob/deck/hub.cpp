@@ -278,7 +278,6 @@ static void open_unlisted(const App *app)
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
   haptic_click();
   app->show();
-  bloom_open(0, -150, app->color);
 }
 
 void hub_open(const App *app)
@@ -306,15 +305,12 @@ static void open_app(int i)
     refresh();
     return;
   }
-  int bx = -107, by = 0;  // the bloom starts at the icon: the list's centre badge, or the grid's icon
-  if (settings.hub_grid) grid_place(i, bx, by);
   focus = i;
   current = APPS[i];
   remember_recent(current);
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
   haptic_click();
   current->show();
-  bloom_open(bx, by, current->color);
 }
 
 void hub_home()
