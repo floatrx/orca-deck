@@ -49,7 +49,7 @@ void banner_show_app(const App *app, const String &line)
   if (hub_current() == app) return;  // the app on screen shows it itself
   buddy_hide();                      // an app's alert wakes the knob
   target = app;
-  show(app->name, line, app->color);
+  show(hub_shown_name(app), line, app->color);
 }
 
 void banner_show(const String &worktree, const String &agent, const String &name, const String &bucket)
@@ -58,7 +58,7 @@ void banner_show(const String &worktree, const String &agent, const String &name
   wt_id = worktree;
   agent_id = agent;
   target = nullptr;
-  show(name, bucket == "attention" ? "needs you" : "done", color_of(bucket));
+  show(name, bucket == "attention" ? L("needs you", "чекає на тебе") : L("done", "готово"), color_of(bucket));
 }
 
 void banner_hide()

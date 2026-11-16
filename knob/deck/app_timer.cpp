@@ -47,14 +47,14 @@ static void paint()
   if (!page) return;
   uint32_t left = remaining();
   set_text(time_label, clock_text(left));
-  set_text(mode_label, on_break ? "BREAK" : pomodoro ? "FOCUS" : "TIMER");
+  set_text(mode_label, on_break ? L("BREAK", "ПЕРЕРВА") : pomodoro ? L("FOCUS", "ФОКУС") : L("TIMER", "ТАЙМЕР"));
   lv_obj_set_style_text_color(mode_label, lv_color_hex(color()), 0);
   lv_obj_set_style_text_color(time_label, lv_color_hex(phase == PAUSED ? C_MUTED : C_INK), 0);
   lv_obj_set_style_arc_color(ring, lv_color_hex(color()), LV_PART_INDICATOR);
   // The ring empties as the time runs out; while stopped it shows the set length out of 90 min.
   int value = phase == STOPPED ? (pomodoro ? FOCUS_MIN : minutes) * 1000 / 90 : (int)(1000ULL * left / max(total_ms, (uint32_t)1));
   lv_arc_set_value(ring, value);
-  set_text(hint_label, phase == STOPPED  ? (pomodoro ? "tap: focus · tap twice: plain timer" : "crown: minutes · tap: start")
+  set_text(hint_label, phase == STOPPED  ? (pomodoro ? L("tap: focus · tap twice: plain timer", "тап: фокус · два тапи: таймер") : L("crown: minutes · tap: start", "колесо: хвилини · тап: старт"))
                        : phase == PAUSED ? "tap: go on · hold: reset"
                                          : "tap: pause · hold: reset");
   set_text(rounds_label, pomodoro && rounds ? String(rounds) + (rounds == 1 ? " round" : " rounds") : "");
@@ -80,11 +80,11 @@ static void finished()
     rounds++;
     on_break = true;
     start(BREAK_MIN * 60000UL);
-    banner_show_app(&app_timer, "focus done · break");
+    banner_show_app(&app_timer, L("focus done · break", "фокус завершено · перерва"));
   } else {
     bool was_break = on_break;
     reset();
-    banner_show_app(&app_timer, was_break ? "break over" : "time's up");
+    banner_show_app(&app_timer, was_break ? L("break over", "перерва скінчилась") : L("time's up", "час вийшов"));
   }
   paint();
 }
@@ -152,8 +152,8 @@ void timer_tick()
 static String subtitle()
 {
   if (phase == RUNNING) return clock_text(remaining()) + (on_break ? " break" : " left");
-  if (phase == PAUSED) return "paused · " + clock_text(left_ms);
-  return pomodoro ? "pomodoro 25 / 5" : String(minutes) + " min";
+  if (phase == PAUSED) return L("paused · ", "пауза · ") + clock_text(left_ms);
+  return pomodoro ? L("pomodoro 25 / 5", "помодоро 25 / 5") : String(minutes) + L(" min", " хв");
 }
 
 static void show()

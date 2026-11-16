@@ -133,10 +133,10 @@ static String ago(int64_t since)
   if (!since || !now) return "";
   int64_t s = (now - since) / 1000;
   if (s < 0) s = 0;
-  if (s < 60) return String((int)s) + "s";
-  if (s < 3600) return String((int)lround(s / 60.0)) + "m";
-  if (s < 86400) return String((int)lround(s / 3600.0)) + "h";
-  return String((int)lround(s / 86400.0)) + "d";
+  if (s < 60) return String((int)s) + L("s", " с");
+  if (s < 3600) return String((int)lround(s / 60.0)) + L("m", " хв");
+  if (s < 86400) return String((int)lround(s / 3600.0)) + L("h", " год");
+  return String((int)lround(s / 86400.0)) + L("d", " д");
 }
 
 static String upper(String s)
@@ -263,10 +263,10 @@ static void render()
     }
   }
   String sum;
-  if (attention) sum += String(attention) + " WAITING";
-  if (working) sum += String(sum.length() ? " · " : "") + working + " WORKING";
-  if (done) sum += String(sum.length() ? " · " : "") + done + " DONE";
-  set_text(summary, sum.length() ? sum : (n ? "ALL QUIET" : "NO WORKSPACES"));
+  if (attention) sum += String(attention) + L(" WAITING", " ЧЕКАЮТЬ");
+  if (working) sum += String(sum.length() ? " · " : "") + working + L(" WORKING", " ПРАЦЮЮТЬ");
+  if (done) sum += String(sum.length() ? " · " : "") + done + L(" DONE", " ГОТОВО");
+  set_text(summary, sum.length() ? sum : (n ? L("ALL QUIET", "ВСЕ ТИХО") : L("NO WORKSPACES", "НЕМАЄ ПРОЄКТІВ")));
 
   build_dots();
   if (dial_count != dot_count) {  // a new list: no slide from a stale place
@@ -308,7 +308,7 @@ static void render()
     aura_since = millis();
   }
   lv_obj_set_style_text_color(state_label, c, 0);
-  set_text(state_label, !a ? "NO AGENTS" : bucket == "attention" ? "NEEDS YOU" : upper(bucket));
+  set_text(state_label, !a ? L("NO AGENTS", "НЕМАЄ АГЕНТІВ") : bucket == "attention" ? L("NEEDS YOU", "ЧЕКАЄ НА ТЕБЕ") : bucket == "working" ? L("WORKING", "ПРАЦЮЄ") : bucket == "done" ? L("DONE", "ГОТОВО") : L("IDLE", "ПРОСТОЮЄ"));
   set_text(name_label, ui_title(w));
   set_text(meta_label, ui_meta(w, a));
 
@@ -781,10 +781,10 @@ static String deck_subtitle()
       else if (a.bucket == "done") done++;
     }
   }
-  String state = attention ? String(attention) + " needs you"
-                 : working ? String(working) + " working"
-                 : done    ? String(done) + " done"
-                           : String(all_worktrees.empty() ? "no workspaces" : "all quiet");
+  String state = attention ? String(attention) + L(" needs you", " чекають")
+                 : working ? String(working) + L(" working", " працюють")
+                 : done    ? String(done) + L(" done", " готово")
+                           : String(all_worktrees.empty() ? L("no workspaces", "немає проєктів") : L("all quiet", "все тихо"));
   String limits = claude_limits(false);  // the plan limits next to the state (user, 2026-11-14)
   return limits.length() ? state + " · " + limits : state;
 }
@@ -902,6 +902,8 @@ static void run_test(const String &line)
   else if (verb == "bat") Serial.println(battery_report());
   else if (verb == "usb") Serial.println(usb_report());
   else if (verb == "pet") pet_test(arg);  // tests: the pet (pet.cpp)
+  else if (verb == "catch") hub_open(&app_pet), catch_start();  // tests: a round of Catch
+  else if (verb == "banner") banner_show_app(&app_pet, "тест банера"), Serial.printf("banner shown=%d\n", banner_is_shown());
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);
@@ -958,6 +960,7 @@ static void loop_tick(lv_timer_t *)
   wheel_tick();
   snake_tick();
   pet_tick();
+  pet_app_tick();
   focus_tick();
   usage_tick();
   day_tick();
@@ -1081,6 +1084,8 @@ extern "C" void ui_init(void)
   wheel_create();
   snake_create();
   pet_init();
+  pet_app_create();
+  catch_create();
   focus_create();
   usage_create();
   day_create();

@@ -51,7 +51,7 @@ static void paint_target()
     set_text(target_label, "→ " + t.title);  // "→", not LV_SYMBOL_RIGHT: the deck fonts have no symbol glyphs
     lv_obj_set_style_text_color(target_label, lv_color_hex(color_of(t.bucket)), 0);
   } else {
-    set_text(target_label, "no Claude chat open");
+    set_text(target_label, L("no Claude chat open", "немає відкритого чату Claude"));
     lv_obj_set_style_text_color(target_label, lv_color_hex(C_MUTED), 0);
   }
 }
@@ -92,8 +92,8 @@ static void paint_group()
 {
   const PromptGroup *g = current();
   if (!g) {
-    set_text(group_label, "PROMPTS");
-    set_text(rows[ROWS / 2], "waiting for the Mac…");
+    set_text(group_label, L("PROMPTS", "ПРОМПТИ"));
+    set_text(rows[ROWS / 2], L("waiting for the Mac…", "чекаю на Мак…"));
     return;
   }
   set_text(group_label, groups.size() > 1 ? g->name + "  " + String(group % groups.size() + 1) + "/" + String(groups.size()) : g->name);
@@ -149,7 +149,7 @@ static void tap()
   sent_agent = t.agent;
   sent_text = g->prompts[sel];
   sent_at = millis();
-  set_text(sent_label, "SENT → " + t.title);
+  set_text(sent_label, L("SENT → ", "НАДІСЛАНО → ") + t.title);
   lv_obj_clear_flag(sent_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_bg_color(band, lv_color_hex(0x10301E), 0);
 }
@@ -212,7 +212,7 @@ static String subtitle()
   int n = 0;
   for (const PromptGroup &g : shared.prompts) n += g.prompts.size();
   xSemaphoreGive(shared_mux);
-  return n ? String(n) + " prompts" : "stock prompts";
+  return n ? String(n) + L(" prompts", " промптів") : L("stock prompts", "готові промпти");
 }
 
 static void show()
@@ -282,7 +282,7 @@ void prompts_create()
   lv_obj_set_style_text_letter_space(group_label, 2, 0);
   target_label = make_label(page, &deck_bold_16, C_MUTED, 116, 220);
   hint_label = make_label(page, &deck_14, C_MUTED, 140, 170);  // ~140 px of screen at this height
-  set_text(hint_label, "tap: send · hold: agent");
+  set_text(hint_label, L("tap: send · hold: agent", "тап: надіслати · утримай: агент"));
   sent_label = make_label(page, &deck_bold_16, C_DONE, 116, 220);
   lv_obj_set_style_bg_color(sent_label, lv_color_hex(C_BG), 0);
   lv_obj_set_style_bg_opa(sent_label, LV_OPA_COVER, 0);

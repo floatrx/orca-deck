@@ -101,10 +101,10 @@ static void paint()
   uint32_t c = !known ? C_IDLE : muted ? C_MUTED_RED : C_DONE;
   lv_obj_set_style_arc_color(ring, lv_color_hex(c), LV_PART_INDICATOR);
   mic_glyph_set(glyph, muted ? C_MUTED_RED : C_INK, muted);
-  set_text(state_label, !known ? "MIC" : holding ? (muted ? "HUSHED" : "TALKING") : muted ? "MUTED" : "LIVE");
+  set_text(state_label, !known ? L("MIC", "МІКРОФОН") : holding ? (muted ? L("HUSHED", "ТИХО") : L("TALKING", "ГОВОРЮ")) : muted ? L("MUTED", "ВИМКНЕНО") : L("LIVE", "УВІМКНЕНО"));
   lv_obj_set_style_text_color(state_label, lv_color_hex(c), 0);
   lv_arc_set_value(level_arc, max(0, level));
-  set_text(level_label, level >= 0 ? "level " + String(level) + "%" : "");
+  set_text(level_label, level >= 0 ? L("level ", "рівень ") + String(level) + "%" : "");
 }
 
 static void take_mac()
@@ -112,7 +112,7 @@ static void take_mac()
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   MacStatus mac = shared.mac;
   xSemaphoreGive(shared_mux);
-  set_text(name_label, mac.at ? (mac.mic.length() ? mac.mic : "no microphone") : "waiting for the Mac…");
+  set_text(name_label, mac.at ? (mac.mic.length() ? mac.mic : L("no microphone", "немає мікрофона")) : L("waiting for the Mac…", "чекаю на Мак…"));
   if (millis() < local_until || holding || !mac.at || !mac.mic.length()) return;
   known = true;
   muted = mac.mic_muted;
@@ -196,7 +196,7 @@ static String subtitle()
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   bool m = shared.mac.mic_muted, has = shared.mac.at && shared.mac.mic.length();
   xSemaphoreGive(shared_mux);
-  return !has ? "the Mac's microphone" : m ? "muted" : "live";
+  return !has ? L("the Mac's microphone", "мікрофон Мака") : m ? L("muted", "вимкнено") : L("live", "увімкнено");
 }
 
 static void show()
@@ -257,7 +257,7 @@ void micmute_create()
   name_label = make_label(page, &deck_14, C_MUTED, 70, 220);
   level_label = make_label(page, &deck_14, C_DETAIL, 92, 200);
   hint_label = make_label(page, &deck_14, C_MUTED, 128, 170);
-  set_text(hint_label, "tap: mute · hold: talk");
+  set_text(hint_label, L("tap: mute · hold: talk", "тап: вимкнути · утримай: говорити"));
   paint();
 }
 

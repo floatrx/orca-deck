@@ -67,9 +67,9 @@ static void paint()
     set_text(unit_label, count > 0 ? m.forward : m.back);
   } else {
     set_text(count_label, "0");
-    set_text(unit_label, "turn the crown");
+    set_text(unit_label, L("turn the crown", "крути колесо"));
   }
-  set_text(hint_label, !strcmp(m.id, "zoom") ? "swipe: mode · tap: 100 %" : "swipe: mode · tap: reset");
+  set_text(hint_label, !strcmp(m.id, "zoom") ? L("swipe: mode · tap: 100 %", "свайп: режим · тап: 100 %") : L("swipe: mode · tap: reset", "свайп: режим · тап: скинути"));
 }
 
 static void turn(int step)

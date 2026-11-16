@@ -6,9 +6,11 @@
 #include <math.h>
 #include <time.h>
 
-static const App *const APPS[] = {&app_deck, &app_usage, &app_prompts, &app_prs, &app_day, &app_focus, &app_mic, &app_timer,
+static const App *const APPS[] = {&app_deck, &app_pet, &app_usage, &app_prompts,  // Claude first, Clawd second (user, 2026-11-16)
+                                  &app_prs, &app_day, &app_focus, &app_mic, &app_timer,
                                   &app_mac, &app_jog, &app_wheel, &app_snake, &app_clock, &app_wifi, &app_settings};
 static const int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
+static int focus = 0;  // the centre row's app
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
 static lv_obj_t *page, *link_label;
@@ -38,7 +40,13 @@ static void draw_clawds(uint32_t now)
     if (!clawd_canvas[slot] || lv_obj_has_flag(clawd_canvas[slot], LV_OBJ_FLAG_HIDDEN)) continue;
     int size = lv_obj_get_width(badges[slot]);
     int pw = size >= 56 ? 3 : size >= 40 ? 2 : 1, ph = size >= 56 ? 5 : size >= 40 ? 4 : 2;
-    clawd_draw(clawd_buf[slot], size, size, pw, ph, (size - 5 * ph) / 2 + ph / 2, mood, now, false, lv_color_hex(0x000000));
+    // The Clawd row shows the pet as he is; the Claude row keeps the standard Clawd acting out the agents
+    // (user, 2026-11-16: «апка claude повинна мати свою анімовану стандартну іконку не залежно від стану улюбленця»).
+    int i = focus + slot - SLOTS / 2;
+    bool is_pet = i >= 0 && i < APP_COUNT && APPS[i] == &app_pet;
+    PetLook look = pet_look();
+    clawd_draw(clawd_buf[slot], size, size, pw, ph, (size - 5 * ph) / 2 + ph / 2, mood, now, false, lv_color_hex(0x000000),
+               false, is_pet && pet_born() ? &look : nullptr);
     lv_obj_invalidate(clawd_canvas[slot]);
   }
 }
@@ -61,7 +69,6 @@ static void clock_face(int slot, bool on)
     lv_line_set_points(hands[slot][h], hand_pts[slot][h], 2);
   }
 }
-static int focus = 0;
 static const App *current = nullptr;  // nullptr: the hub is on screen
 static bool pressed = false;
 // Boot (user, 2026-11-14): the Earth turns with a spinner in the middle until the Mac answers, then the list
@@ -79,6 +86,20 @@ static const int SLOT_Y[SLOTS] = {-126, -70, 0, 70, 126};
 static const int BADGE[SLOTS] = {30, 40, 60, 40, 30};
 static const lv_opa_t OPA[SLOTS] = {LV_OPA_30, LV_OPA_60, LV_OPA_COVER, LV_OPA_60, LV_OPA_30};
 
+// The hub shows the apps' names in Ukrainian (user, 2026-11-16: «це ж моя OS»); `App::name` stays English — the
+// test verbs ("open Clock") and the code know the apps by it.
+const char *hub_shown_name(const App *app)
+{
+  static const struct { const App *app; const char *name; } UA[] = {
+      {&app_usage, "Ліміти"}, {&app_prompts, "Промпти"}, {&app_prs, "PR-радар"}, {&app_day, "День"}, {&app_focus, "Фокус"},
+      {&app_mic, "Мікрофон"}, {&app_timer, "Таймер"}, {&app_mac, "Мак"}, {&app_jog, "Джог"}, {&app_wheel, "Колесо"},
+      {&app_snake, "Змійка"}, {&app_clock, "Годинник"}, {&app_settings, "Налаштування"}};
+  if (settings.lang) return app->name;  // English: the apps' own names
+  for (const auto &e : UA)
+    if (e.app == app) return e.name;
+  return app->name;  // Clawd, Claude, Wi-Fi
+}
+
 static void refresh()
 {
   if (!page || booting || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
@@ -93,7 +114,7 @@ static void refresh()
     }
     const App *app = APPS[i];
     lv_obj_clear_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
-    bool claude = app == &app_deck;
+    bool claude = app == &app_deck || app == &app_pet;  // both badges are Clawd himself (the pet's look)
     lv_obj_set_style_bg_color(badges[slot], lv_color_hex(claude ? 0x000000 : app->color), 0);
     clawd_badge(slot, claude);
     bool mic = app == &app_mic;
@@ -106,7 +127,7 @@ static void refresh()
       mic_glyph_set(mic_badge[slot], C_BG, muted);
     }
     mic ? lv_obj_clear_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN);
-    set_text(names[slot], app->name);
+    set_text(names[slot], hub_shown_name(app));
     set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
   if (!linked) return;
@@ -298,7 +319,7 @@ static void boot_tick(uint32_t now)
   }
   if (online && !linked_at) {
     linked_at = now;
-    set_text(boot_label, "connected");
+    set_text(boot_label, L("connected", "на зв’язку"));
   }
   if ((linked_at && now - linked_at >= 600) || now >= boot_until) end_boot();
 }
@@ -335,6 +356,7 @@ String hub_report()
   if (current == &app_jog) return "Jog " + jog_report();
   if (current == &app_wheel) return "Wheel " + wheel_report();
   if (current == &app_snake) return "Snake " + snake_report();
+  if (current == &app_pet) return "Clawd " + pet_app_report();
   if (current == &app_focus) return "Focus " + focus_report();
   if (current == &app_usage) return "Usage " + usage_report();
   if (current == &app_day) return "Day " + day_report();
@@ -483,7 +505,7 @@ void hub_create()
   boot_name = make_label(page, &deck_bold_30, C_INK, -84, 220);
   set_text(boot_name, "Clawd");
   boot_label = make_label(page, &deck_bold_16, C_INK, 76, 220);
-  set_text(boot_label, "connecting…");
+  set_text(boot_label, L("connecting…", "підключаюсь…"));
   for (int slot = 0; slot < SLOTS; slot++) lv_obj_set_style_opa(rows[slot], LV_OPA_TRANSP, 0);
   boot_until = millis() + 5000;
   hub_home();

@@ -161,7 +161,7 @@ static void rebuild()
       add_row("answer it in Orca", ROW_OPTION, -1);
     }
   } else if (loaded && working) {
-    add_status("Working…");  // plain grey with a spinner, not a row: nothing to pick (user, 2026-11-14)
+    add_status(L("Working…", "Працює…"));  // plain grey with a spinner, not a row: nothing to pick (user, 2026-11-14)
   } else if (loaded && !page_detail.next.empty()) {
     for (size_t i = 0; i < page_detail.next.size(); i++) add_row((i == 0 ? "• " : "") + page_detail.next[i], ROW_VARIANT, i);
     add_row("Send", ROW_SEND, 0);
@@ -225,7 +225,7 @@ void agent_page_open(const Worktree &w, const Agent &a)
   step = 0;
   set_text(title, ui_title(w));
   set_text(meta, ui_meta(w, &a));
-  set_text(state, a.bucket == "attention" ? "NEEDS YOU" : a.bucket == "working" ? "WORKING" : a.bucket == "done" ? "DONE" : "IDLE");
+  set_text(state, a.bucket == "attention" ? L("NEEDS YOU", "ЧЕКАЄ НА ТЕБЕ") : a.bucket == "working" ? L("WORKING", "ПРАЦЮЄ") : a.bucket == "done" ? L("DONE", "ГОТОВО") : L("IDLE", "ПРОСТОЮЄ"));
   lv_obj_set_style_text_color(state, lv_color_hex(color_of(a.bucket)), 0);
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   shared.want_detail = a.id;

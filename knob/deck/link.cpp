@@ -88,7 +88,7 @@ bool apply_state(const String &body, const String &via)
   shared.list.swap(fresh);
   shared.version++;
   shared.online = true;
-  shared.status = "bridge online · " + via;
+  shared.status = L("bridge online · ", "бридж на зв’язку · ") + via;
   xSemaphoreGive(shared_mux);
   return true;
 }
@@ -301,7 +301,7 @@ void handle_line(const String &line, LinkKind via)
       String cmd = ack["cmd"] | "?";
       String note = ack["note"] | "";
       bool ok = ack["ok"] | false;
-      set_status(true, ok ? cmd + " ok" : cmd + " failed" + (note.length() ? ": " + note : ""));
+      set_status(true, ok ? cmd + L(" ok", " ок") : cmd + L(" failed", " не вдалось") + (note.length() ? ": " + note : ""));
     }
   }
 }

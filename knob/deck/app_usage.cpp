@@ -40,9 +40,9 @@ static int parse(const String &list, Part *out, int max_parts)
 static String duration(int minutes)
 {
   if (minutes < 0) return "";
-  if (minutes >= 1440) return String(minutes / 1440) + "d " + String(minutes % 1440 / 60) + "h";
-  if (minutes >= 60) return String(minutes / 60) + "h " + String(minutes % 60) + "m";
-  return String(minutes) + "m";
+  if (minutes >= 1440) return String(minutes / 1440) + L("d ", " д ") + String(minutes % 1440 / 60) + L("h", " год");
+  if (minutes >= 60) return String(minutes / 60) + L("h ", " год ") + String(minutes % 60) + L("m", " хв");
+  return String(minutes) + L("m", " хв");
 }
 
 static void paint()
@@ -57,7 +57,7 @@ static void paint()
   lv_obj_set_style_arc_color(week_arc, lv_color_hex(sev), LV_PART_INDICATOR);
   set_text(pct_label, known ? String(mac.claude_week) + "%" : "--");
   lv_obj_set_style_text_color(pct_label, lv_color_hex(known ? C_INK : C_MUTED), 0);
-  set_text(reset_label, mac.week_reset_min >= 0 ? "resets in " + duration(mac.week_reset_min) : known ? "" : "no data from the Mac");
+  set_text(reset_label, mac.week_reset_min >= 0 ? L("resets in ", "скинеться через ") + duration(mac.week_reset_min) : known ? "" : L("no data from the Mac", "немає даних від Мака"));
 
   // The inner dial: the 5 h window while one is open, else the first per-model limit.
   Part models[2];
@@ -159,7 +159,7 @@ void usage_create()
   inner_arc = dial(292, 6);
   title_label = make_label(page, &deck_bold_16, C_MUTED, -66, 200);
   lv_obj_set_style_text_letter_space(title_label, 3, 0);
-  set_text(title_label, "CLAUDE WEEK");
+  set_text(title_label, L("CLAUDE WEEK", "CLAUDE ТИЖДЕНЬ"));
   pct_label = make_label(page, &lv_font_montserrat_48, C_INK, -18, 200);
   reset_label = make_label(page, &deck_16, C_MUTED, 22, 220);
   inner_label = make_label(page, &deck_14, 0xB18CFF, 48, 220);

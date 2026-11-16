@@ -47,7 +47,7 @@ static String hm(int minute)
 
 static String span_text(int minutes)
 {
-  if (minutes >= 60) return String(minutes / 60) + "h " + String(minutes % 60) + "m";
+  if (minutes >= 60) return String(minutes / 60) + L("h ", " год ") + String(minutes % 60) + L("m", " хв");
   return String(minutes) + " min";
 }
 
@@ -82,13 +82,13 @@ static void draw()
         }
       }
     }
-    set_text(unit_label, n ? "" : "nothing ran");
+    set_text(unit_label, n ? "" : L("nothing ran", "нічого не працювало"));
     set_text(line1_label, who[0]);
     set_text(line2_label, who[1]);
   } else {  // the day's totals
     set_text(big_label, span_text(day.waited));
-    set_text(unit_label, "waited on you");
-    set_text(line1_label, day.now >= 0 ? "worked " + span_text(day.worked) : "no data yet");
+    set_text(unit_label, L("waited on you", "чекали на тебе"));
+    set_text(line1_label, day.now >= 0 ? L("worked ", "працювали ") + span_text(day.worked) : L("no data yet", "ще немає даних"));
     String names;
     for (int i = 0; i < min(rings, 3); i++) names += String(i ? " · " : "") + day.rows[i].name;
     set_text(line2_label, names);  // the rings from the outside in
@@ -126,7 +126,7 @@ static String subtitle()
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   int waited = shared.day.waited, now = shared.day.now;
   xSemaphoreGive(shared_mux);
-  return now < 0 ? "today" : "waited " + span_text(waited);
+  return now < 0 ? L("today", "сьогодні") : L("waited ", "чекали ") + span_text(waited);
 }
 
 static void show()

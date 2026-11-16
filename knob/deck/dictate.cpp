@@ -55,12 +55,12 @@ static void show_stage(Stage next)
   wait ? lv_obj_clear_flag(spinner, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
   rec ? lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
   done || failed ? lv_obj_clear_flag(text_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(text_label, LV_OBJ_FLAG_HIDDEN);
-  set_text(state_label, rec ? "LISTENING" : wait ? "TRANSCRIBING" : done ? "SENT" : failed ? "NOT SENT" : "");
+  set_text(state_label, rec ? L("LISTENING", "СЛУХАЮ") : wait ? L("TRANSCRIBING", "РОЗПІЗНАЮ") : done ? L("SENT", "НАДІСЛАНО") : failed ? L("NOT SENT", "НЕ НАДІСЛАНО") : "");
   lv_obj_set_style_text_color(state_label, lv_color_hex(rec ? C_ATTENTION : done ? C_DONE : failed ? C_ATTENTION : C_WORKING), 0);
-  set_text(hint_label, rec ? "tap when done · swipe: cancel" : failed ? "tap: close" : "");
+  set_text(hint_label, rec ? L("tap when done · swipe: cancel", "тап — готово · свайп — скасувати") : failed ? L("tap: close", "тап: закрити") : "");
   if (done) {  // the result plays out in dictate_tick
     set_text(text_label, "");
-    set_text(state_label, "SENDING");
+    set_text(state_label, L("SENDING", "НАДСИЛАЮ"));
     lv_obj_set_style_text_color(state_label, lv_color_hex(C_WORKING), 0);
     lv_obj_set_style_translate_y(text_label, 0, 0);
     lv_obj_set_style_opa(text_label, LV_OPA_COVER, 0);
@@ -228,8 +228,8 @@ void dictate_tick()
     if (t >= s0 && t < s0 + SWEEP_MS + 50) {
       float f = fminf(1.0f, (t - s0) / (float)SWEEP_MS);
       lv_arc_set_value(sweep, (int)(1000 * (1 - (1 - f) * (1 - f))));  // ease out
-      if (f >= 1.0f && strcmp(lv_label_get_text(state_label), "SENT")) {
-        set_text(state_label, "SENT");
+      if (f >= 1.0f && strcmp(lv_label_get_text(state_label), L("SENT", "НАДІСЛАНО"))) {
+        set_text(state_label, L("SENT", "НАДІСЛАНО"));
         lv_obj_set_style_text_color(state_label, lv_color_hex(C_DONE), 0);
         haptic_click();
       }

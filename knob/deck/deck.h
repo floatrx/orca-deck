@@ -221,7 +221,10 @@ struct Settings {
   uint8_t sound = 2;          // 0 off · 1 quiet · 2 on
   uint8_t brightness = 100;   // 40–100 %
   uint8_t saver = 15;         // screensaver after this many seconds idle; 0 off
+  uint8_t lang = 0;           // 0 Ukrainian · 1 English (user, 2026-11-16: «вибір мови»)
 };
+// The UI's words in the chosen language: L("English", "Українська").
+inline const char *L(const char *en, const char *ua) { extern Settings settings; return settings.lang ? en : ua; }
 extern Settings settings;
 void settings_load();
 void settings_apply();
@@ -260,7 +263,7 @@ struct App {
   void (*swipe)(lv_dir_t dir);     // left / right; down never arrives (it is the hub's)
 };
 extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog, app_wheel, app_focus, app_usage, app_day,
-    app_prompts, app_mic, app_prs, app_wifi, app_snake;
+    app_prompts, app_mic, app_prs, app_wifi, app_snake, app_pet;
 void hub_create();
 void hub_turn(int step);           // the crown: the hub's list or the open app
 void hub_home();
@@ -271,6 +274,7 @@ String hub_report();
 void hub_test(const String &verb, const String &arg);  // "T tap|hold|swipe|open|home …"
 void hub_tick();
 void hub_open(const App *app);
+const char *hub_shown_name(const App *app);  // the app's name on screen (Ukrainian)
 
 // globe.cpp — the hub's background
 void globe_create(lv_obj_t *parent);
@@ -288,8 +292,7 @@ void buddy_show_now();
 String buddy_report();
 String claude_mood();
 String claude_limits(bool with_reset);  // "5h 34% · wk 79%" (+ " · 1d 2h" to the week's reset); "" when unknown  // the loudest agent state: attention / working / done / idle; sleep without a link
-void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const String &mood, uint32_t now, bool bang_ok,
-                lv_color_t bg, bool floor_shadow = false);
+
 
 // app_timer.cpp
 void timer_create();
@@ -388,10 +391,13 @@ String usb_report();  // usbdiag.cpp
 // pet.cpp — Clawd the pet (.work/plans/clawd-pet.md)
 enum PetStage { PET_EGG, PET_BABY, PET_ADULT, PET_DEAD };
 enum PetStyle { STYLE_PLAIN, STYLE_OWL, STYLE_SHIPPER, STYLE_DJ };
+// His life in looks (user, 2026-11-16: «від яйця … до дорослого Clawd … 15-20 варіантів … розмір міняти»):
+enum PetPhase { PHASE_EGG, PHASE_EGG_WARM, PHASE_EGG_WOBBLE, PHASE_EGG_CRACK, PHASE_EGG_HATCH, PHASE_NEWBORN, PHASE_BABY,
+                PHASE_TODDLER, PHASE_KID, PHASE_TEEN, PHASE_ADULT, PHASE_ELDER, PHASE_LEGEND, PHASE_GRAVE };
 enum PetEvent { PET_AGENT_WORKING, PET_AGENT_ATTENTION, PET_AGENT_DONE, PET_SENT, PET_PR_FAIL, PET_SNAKE_APPLE };
-enum PetAction { PET_FEED, PET_PLAY, PET_SQUASH, PET_HEAL, PET_LIGHTS, PET_VACATION, PET_NEW_EGG };
+enum PetAction { PET_FEED, PET_PLAY, PET_SQUASH, PET_HEAL, PET_LIGHTS, PET_VACATION, PET_NEW_EGG, PET_PET, PET_WARM, PET_RESET };
 enum PetReaction { PET_REACT_NONE, PET_REACT_TYPING, PET_REACT_ALERT, PET_REACT_EAT, PET_REACT_PLANE, PET_REACT_BUG,
-                   PET_REACT_HATCH, PET_REACT_CHEER };
+                   PET_REACT_HATCH, PET_REACT_CHEER, PET_REACT_LOVE };
 struct PetLook {
   PetStage stage = PET_ADULT;
   PetStyle style = STYLE_PLAIN;
@@ -399,6 +405,8 @@ struct PetLook {
   int bugs = 0;
   PetReaction reaction = PET_REACT_NONE;
   uint32_t reaction_ms = 0;  // since the reaction began
+  uint8_t phase = PHASE_ADULT;  // the look along his life (pet.cpp § phases)
+  float scale = 1.0f;           // his size: a newborn is under half of an adult
 };
 void pet_init();                 // LVGL task, at UI build: loads NVS
 void pet_tick();                 // LVGL task, every frame: time passes, saves now and then
@@ -414,8 +422,27 @@ uint32_t pet_age_s();
 String pet_counts();
 const char *pet_stage_name(PetStage s);
 const char *pet_style_name(PetStyle s);
+const char *pet_phase_name(uint8_t phase);
 String pet_report();
+uint32_t pet_hatch_left_s();  // an egg: seconds to hatching; 0 otherwise
+String pet_said();  // what he says right now (a few seconds), "" otherwise
 void pet_test(const String &arg);
+void pet_app_create();   // app_pet.cpp: the Clawd app
+void pet_app_tick();
+String pet_app_report();
+void pet_game_result(int apples, int stars, int bugs);  // Catch (catch.cpp) is over
+// catch.cpp: Catch, the pet's own game
+void catch_create();
+void catch_start();
+bool catch_active();
+void catch_tick();
+void catch_turn(int step);
+void catch_tap();
+void catch_abort();
+String catch_report();
+// buddy.cpp: Clawd into any RGB565 buffer; `look` (the pet) adds his stage, accessory and reactions
+void clawd_draw(lv_color_t *b, int bw, int bh, int pw, int ph, int base_y, const String &mood, uint32_t now, bool bang_ok,
+                lv_color_t bg, bool floor_shadow = false, const PetLook *look = nullptr);
 
 // mic.cpp — the PDM microphone (spike: T mic <seconds>)
 void mic_test(int seconds);

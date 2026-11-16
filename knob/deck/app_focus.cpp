@@ -30,14 +30,14 @@ static void paint()
   bool brk = timer_on_break();
   lv_arc_set_value(iris, on ? (int)(1000ULL * left / total) : 1000);
   lv_obj_set_style_arc_color(iris, lv_color_hex(on ? (brk ? C_DONE : FOCUS_COLOR) : 0x2C2D31), LV_PART_INDICATOR);
-  set_text(state_label, on ? (brk ? "BREAK" : "FOCUS") : "FOCUS");
+  set_text(state_label, on ? (brk ? L("BREAK", "ПЕРЕРВА") : L("FOCUS", "ФОКУС")) : L("FOCUS", "ФОКУС"));
   lv_obj_set_style_text_color(state_label, lv_color_hex(on ? (brk ? C_DONE : FOCUS_COLOR) : C_MUTED), 0);
   uint32_t s = (left + 999) / 1000;
   char t[12];
   snprintf(t, sizeof(t), "%02u:%02u", (unsigned)(s / 60), (unsigned)(s % 60));
   set_text(time_label, on ? t : "25:00");
   lv_obj_set_style_text_color(time_label, lv_color_hex(on ? C_INK : C_MUTED), 0);
-  set_text(hint_label, on ? "tap: stop" : "tap: Mac Focus + Pomodoro");
+  set_text(hint_label, on ? L("tap: stop", "тап: стоп") : L("tap: Mac Focus + Pomodoro", "тап: фокус Мака + помодоро"));
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   String error = shared.mac.focus_error;
   xSemaphoreGive(shared_mux);
@@ -70,7 +70,7 @@ static void turn_off(bool by_timer)
   mac_focus(false);
   if (!by_timer) timer_focus(false);
   lv_obj_set_style_arc_width(iris, 10, LV_PART_INDICATOR);
-  if (by_timer) banner_show_app(&app_focus, "round over · Focus off");
+  if (by_timer) banner_show_app(&app_focus, L("round over · Focus off", "раунд завершено · фокус вимкнено"));
   haptic_click();
   paint();
 }
@@ -90,9 +90,9 @@ void focus_tick()
 
 static String subtitle()
 {
-  if (!on) return "Mac Focus + Pomodoro";
+  if (!on) return L("Mac Focus + Pomodoro", "фокус Мака + помодоро");
   uint32_t s = (timer_left_ms() + 999) / 1000;
-  return String(timer_on_break() ? "break · " : "on · ") + String(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + String(s % 60);
+  return String(timer_on_break() ? L("break · ", "перерва · ") : L("on · ", "фокус · ")) + String(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + String(s % 60);
 }
 
 static void show()

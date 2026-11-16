@@ -157,19 +157,19 @@ static void draw()
 
 static void labels()
 {
-  set_text(score_label, state == READY ? "" : "L" + String(level) + " · " + String(score));
+  set_text(score_label, state == READY ? "" : L("L", "Р") + String(level) + " · " + String(score));
   bool card = state != RUNNING;
   card ? lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
   card ? lv_obj_clear_flag(hint_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
-  set_text(title_label, state == READY ? String("SNAKE") : state == PAUSED ? String("PAUSED") : state == LEVELUP ? "LEVEL " + String(level) : String("GAME OVER"));
+  set_text(title_label, state == READY ? String(L("SNAKE", "ЗМІЙКА")) : state == PAUSED ? String(L("PAUSED", "ПАУЗА")) : state == LEVELUP ? L("LEVEL ", "РІВЕНЬ ") + String(level) : String(L("GAME OVER", "КІНЕЦЬ ГРИ")));
   lv_obj_set_style_text_color(title_label, lv_color_hex(state == OVER ? C_ATTENTION : state == LEVELUP ? C_DONE : C_INK), 0);
-  String best_line = best > 0 ? "best " + String(best) : "";
+  String best_line = best > 0 ? L("best ", "рекорд ") + String(best) : "";
   int rings = RING_COUNT[level - 1];
   String hint;
-  if (state == READY) hint = String("turn the crown to steer\ntap to start\na new level every ") + APPLES_PER_LEVEL + " apples";
-  else if (state == PAUSED) hint = "tap to go on";
-  else if (state == LEVELUP) hint = String(rings) + (rings == 1 ? " ring" : " rings") + " · find the gaps";
-  else hint = (score >= best && score > 0 ? String("new best!") : best_line) + "\nlevel " + level + " · tap to play again";
+  if (state == READY) hint = String(L("turn the crown to steer\ntap to start\na new level every ", "колесо — кермо\nтап — старт\nновий рівень кожні ")) + APPLES_PER_LEVEL + L(" apples", " яблук");
+  else if (state == PAUSED) hint = L("tap to go on", "тап — далі");
+  else if (state == LEVELUP) hint = String(rings) + (rings == 1 ? L(" ring", " кільце") : L(" rings", " кільця")) + L(" · find the gaps", " · шукай проходи");
+  else hint = (score >= best && score > 0 ? String(L("new best!", "новий рекорд!")) : best_line) + L("\nlevel ", "\nрівень ") + level + L(" · tap to play again", " · тап — ще раз");
   set_text(hint_label, hint);
 }
 
@@ -334,8 +334,8 @@ void snake_tick()
 
 static String subtitle()
 {
-  if (state == RUNNING || state == PAUSED || state == LEVELUP) return "paused · L" + String(level) + " · " + String(score);
-  return best ? "best " + String(best) : "turn the crown to steer";
+  if (state == RUNNING || state == PAUSED || state == LEVELUP) return L("paused · L", "пауза · Р") + String(level) + " · " + String(score);
+  return best ? L("best ", "рекорд ") + String(best) : L("turn the crown to steer", "колесо — кермо");
 }
 
 static void show()

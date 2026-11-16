@@ -79,7 +79,7 @@ static void paint()
     set_text(head_label, "PR RADAR");
     set_text(repo_label, "");
     set_text(num_label, "");
-    set_text(title_label, error.length() ? error : waiting ? "asking GitHub…" : "no open PRs");
+    set_text(title_label, error.length() ? error : waiting ? L("asking GitHub…", "питаю GitHub…") : L("no open PRs", "немає відкритих PR"));
     set_text(state_label, "");
     set_text(hint_label, "");
     layout();
@@ -101,7 +101,7 @@ static void paint()
   else if (p.review == "changes") state += " · changes asked";
   set_text(state_label, state);
   bool armed = armed_at && millis() - armed_at < ARM_MS;
-  set_text(hint_label, armed ? "tap: re-run failed jobs" : p.rerun ? "tap: open · hold: re-run" : "tap: open in browser");
+  set_text(hint_label, armed ? L("tap: re-run failed jobs", "тап: перезапустити впалі") : p.rerun ? L("tap: open · hold: re-run", "тап: відкрити · утримай: перезапуск") : L("tap: open in browser", "тап: відкрити в браузері"));
   lv_obj_set_style_text_color(hint_label, lv_color_hex(armed ? C_ATTENTION : C_MUTED), 0);
   layout();
 }
@@ -135,7 +135,7 @@ static void take_prs()
     if (!first && was != last_checks.end() && was->second == "run" && (p.checks == "fail" || p.checks == "ok")) {
       if (p.checks == "fail") pet_event(PET_PR_FAIL);  // a bug crawls in on Clawd (pet.cpp)
       if (p.checks == "fail" || !focus_is_on()) {
-        banner_show_app(&app_prs, short_repo(p.key) + number_of(p.key) + (p.checks == "fail" ? " checks failed" : " checks passed"));
+        banner_show_app(&app_prs, short_repo(p.key) + number_of(p.key) + (p.checks == "fail" ? L(" checks failed", " перевірки впали") : L(" checks passed", " перевірки пройшли")));
       }
     }
   }
@@ -170,12 +170,12 @@ static void tap()
     armed_at = 0;
     send_pr("rerun");
     haptic_click(2);
-    set_text(hint_label, "re-running…");
+    set_text(hint_label, L("re-running…", "перезапускаю…"));
     return;
   }
   send_pr("open");
   haptic_click();
-  set_text(hint_label, "opened on the Mac");
+  set_text(hint_label, L("opened on the Mac", "відкрито на Маку"));
 }
 
 static void hold()
@@ -220,8 +220,8 @@ static String subtitle()
   }
   bool has = shared.prs_loaded;
   xSemaphoreGive(shared_mux);
-  if (!has) return "your PRs and reviews";
-  if (!n) return "no open PRs";
+  if (!has) return L("your PRs and reviews", "твої PR і рев’ю");
+  if (!n) return L("no open PRs", "немає відкритих PR");
   String out = String(n) + " open";
   if (fails) out += " · " + String(fails) + " failing";
   if (asks) out += " · " + String(asks) + " review";

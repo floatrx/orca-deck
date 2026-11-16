@@ -30,9 +30,9 @@ static const char *battery_symbol(int pct, bool charging)
 static String ago(uint32_t ms)
 {
   uint32_t s = ms / 1000;
-  if (s < 60) return String(s) + "s ago";
-  if (s < 3600) return String(s / 60) + "m ago";
-  return String(s / 3600) + "h ago";
+  if (s < 60) return String(s) + L("s ago", " с тому");
+  if (s < 3600) return String(s / 60) + L("m ago", " хв тому");
+  return String(s / 3600) + L("h ago", " год тому");
 }
 
 static void paint_text()
@@ -41,12 +41,14 @@ static void paint_text()
   if (local_time(t)) {
     char hm[8], date[32];
     strftime(hm, sizeof(hm), "%H:%M", &t);
-    strftime(date, sizeof(date), "%A %e %b", &t);
+    static const char *const DAYS[] = {"неділя", "понеділок", "вівторок", "середа", "четвер", "п’ятниця", "субота"};
+    static const char *const MONTHS[] = {"січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"};
     set_text(time_label, hm);
-    set_text(date_label, date);
+    strftime(date, sizeof(date), "%A %e %b", &t);  // English: the C locale's names
+    set_text(date_label, settings.lang ? String(date) : String(DAYS[t.tm_wday]) + ", " + t.tm_mday + " " + MONTHS[t.tm_mon]);
   } else {
     set_text(time_label, "--:--");
-    set_text(date_label, "waiting for the Mac's time");
+    set_text(date_label, L("waiting for the Mac's time", "чекаю час від Мака"));
   }
 
   xSemaphoreTake(shared_mux, portMAX_DELAY);

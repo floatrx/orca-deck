@@ -20,9 +20,9 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
 enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER,
-           ROW_WIFI_ADD, ROW_ABOUT };
+           ROW_WIFI_ADD, ROW_ABOUT, ROW_VACATION, ROW_LANG };
 static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS,
-                                              ROW_ABOUT};
+                                              ROW_LANG, ROW_VACATION, ROW_ABOUT};
 static uint32_t wifi_asked_at = 0;  // "Add the Mac's Wi-Fi" was tapped: the password is asked on the Mac
 static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
@@ -38,6 +38,7 @@ void settings_load()
   settings.sound = prefs.getUChar("sound", settings.sound);
   settings.brightness = prefs.getUChar("bright", settings.brightness);
   settings.saver = prefs.getUChar("saver", settings.saver);
+  settings.lang = prefs.getUChar("lang", settings.lang);
   prefs.end();
 }
 
@@ -76,6 +77,7 @@ static void save()
   prefs.putUChar("sound", settings.sound);
   prefs.putUChar("bright", settings.brightness);
   prefs.putUChar("saver", settings.saver);
+  prefs.putUChar("lang", settings.lang);
   prefs.end();
 }
 
@@ -94,8 +96,9 @@ void settings_apply()
 
 static String row_name(int row)
 {
-  static const char *NAMES[] = {"Connection", "Wi-Fi", "Hide inactive", "Hide completed", "Haptics", "Sound",
-                                "Brightness", "Screensaver", "Add the Mac's Wi-Fi", "About"};
+  const char *NAMES[] = {L("Connection", "Зв’язок"), "Wi-Fi", L("Hide inactive", "Ховати неактивні"), L("Hide completed", "Ховати завершені"), L("Haptics", "Вібро"), L("Sound", "Звук"),
+                                L("Brightness", "Яскравість"), L("Screensaver", "Заставка"), L("Add the Mac's Wi-Fi", "Додати Wi-Fi Мака"), L("About", "Про пристрій"), L("Clawd vacation", "Відпустка Clawd"),
+                        "Мова / Language"};
   return NAMES[row];
 }
 
@@ -103,23 +106,25 @@ static String row_value(int row)
 {
   switch (row) {
     case ROW_LINK: {
-      if (forget_hold_from) return "keep holding…";
+      if (forget_hold_from) return L("keep holding…", "тримай далі…");
       xSemaphoreTake(shared_mux, portMAX_DELAY);
       LinkKind link = shared.link;
       xSemaphoreGive(shared_mux);
-      return String(link_name(link)) + (ble_connected() ? " · paired" : "");
+      return String(link_name(link)) + (ble_connected() ? L(" · paired", " · спарено") : "");
     }
-    case ROW_WIFI: return settings.wifi ? "fallback" : "off";
-    case ROW_HIDE_INACTIVE: return settings.hide_inactive ? "on" : "off";
-    case ROW_HIDE_COMPLETED: return settings.hide_completed == 0 ? "off" : settings.hide_completed == 1 ? "1 h" : "1 day";
-    case ROW_HAPTICS: return settings.haptics ? String(settings.haptics) + "/3" : "off";
-    case ROW_SOUND: return settings.sound == 0 ? "off" : settings.sound == 1 ? "quiet" : "on";
+    case ROW_WIFI: return settings.wifi ? L("fallback", "запасний") : L("off", "вимк");
+    case ROW_HIDE_INACTIVE: return settings.hide_inactive ? L("on", "увімк") : L("off", "вимк");
+    case ROW_HIDE_COMPLETED: return settings.hide_completed == 0 ? L("off", "вимк") : settings.hide_completed == 1 ? L("1 h", "1 год") : L("1 day", "1 день");
+    case ROW_HAPTICS: return settings.haptics ? String(settings.haptics) + "/3" : L("off", "вимк");
+    case ROW_SOUND: return settings.sound == 0 ? L("off", "вимк") : settings.sound == 1 ? L("quiet", "тихо") : L("on", "увімк");
     case ROW_WIFI_ADD:
-      if (wifi_asked_at && millis() - wifi_asked_at < 30000) return "type the password on the Mac";
-      return String(wifi_store_count()) + " saved · tap to add";
+      if (wifi_asked_at && millis() - wifi_asked_at < 30000) return L("type the password on the Mac", "введи пароль на Маку");
+      return String(wifi_store_count()) + L(" saved · tap to add", " збережено · тап: додати");
     case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
-    case ROW_ABOUT: return "Clawd · " + String(__DATE__).substring(0, 6);  // the device is Clawd (user, 2026-11-15)
-    case ROW_SAVER: return settings.saver == 0 ? "off" : settings.saver >= 60 ? "after 1 min" : "after " + String(settings.saver) + " s";
+    case ROW_LANG: return settings.lang ? "English" : "Українська";
+    case ROW_VACATION: return pet_vacation() ? L("time stands still", "час стоїть") : L("off", "вимкнена");  // the pet's clock frozen (pet.cpp)
+    case ROW_ABOUT: return String("Clawd · ") + String(__DATE__).substring(0, 6);  // the device is Clawd (user, 2026-11-15)
+    case ROW_SAVER: return settings.saver == 0 ? L("off", "вимк") : settings.saver >= 60 ? L("after 1 min", "через 1 хв") : L("after ", "через ") + String(settings.saver) + L(" s", " с");
   }
   return "";
 }
@@ -173,13 +178,14 @@ void settings_page_refresh()
   }
   bool deck = rows == &DECK_ROWS;
   if (editing) {
-    set_text(hint, "crown: change · tap: save");
+    set_text(hint, L("crown: change · tap: save", "колесо: змінити · тап: зберегти"));
     return;
   }
-  set_text(hint, (*rows)[focus] == ROW_LINK  ? "hold 2 s: forget the paired relay"
-                 : (*rows)[focus] == ROW_ABOUT ? "BLE name: orca-deck-knob"
-                 : deck                     ? "tap: change · swipe left: back"
-                                            : "tap: change · swipe down: hub");
+  set_text(hint, (*rows)[focus] == ROW_LINK  ? L("hold 2 s: forget the paired relay", "утримай 2 с: забути релей")
+                 : (*rows)[focus] == ROW_LANG  ? L("tap: switch · the knob restarts", "тап: змінити (з перезапуском)")
+                 : (*rows)[focus] == ROW_ABOUT ? L("BLE name: orca-deck-knob", L("BLE name: orca-deck-knob", "BLE-ім’я: orca-deck-knob"))
+                 : deck                     ? L("tap: change · swipe left: back", "тап: змінити · свайп вліво: назад")
+                                            : L("tap: change · swipe down: hub", "тап: змінити · свайп вниз: хаб"));
 }
 
 void settings_page_turn(int step)
@@ -216,6 +222,15 @@ void settings_page_tap()
     case ROW_ABOUT: return;
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
+    case ROW_VACATION: pet_action(PET_VACATION); haptic_click(); settings_page_refresh(); return;
+    case ROW_LANG: {  // saved, then a restart: every page is built again in the new language (titles set once included)
+      settings.lang = !settings.lang;
+      save();
+      haptic_click(2);
+      settings_page_refresh();
+      lv_timer_create([](lv_timer_t *) { ESP.restart(); }, 700, NULL);
+      return;
+    }
     case ROW_WIFI_ADD: {  // the bridge asks the password in a dialog on the Mac; the W line brings the network here
       JsonDocument cmd;
       cmd["cmd"] = "wifi_add";
@@ -269,7 +284,7 @@ void settings_page_create()
 
   title = make_label(page, &deck_bold_16, C_MUTED, -122, 200);
   lv_obj_set_style_text_letter_space(title, 2, 0);
-  set_text(title, "SETTINGS");
+  set_text(title, L("SETTINGS", "НАЛАШТУВАННЯ"));
   for (int slot = 0; slot < VISIBLE; slot++) {
     int y = (slot - VISIBLE / 2) * 40 - 4;
     bool mid = slot == VISIBLE / 2;
@@ -284,7 +299,7 @@ void settings_page_show(bool show, bool deck_rows)
   if (show) {
     rows = deck_rows ? &DECK_ROWS : &SYSTEM_ROWS;
     focus = 0;
-    set_text(title, deck_rows ? "CLAUDE" : "SETTINGS");
+    set_text(title, deck_rows ? "CLAUDE" : L("SETTINGS", "НАЛАШТУВАННЯ"));
     lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(page);
     forget_hold_from = 0;
@@ -312,7 +327,7 @@ static String app_subtitle()
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   LinkKind link = shared.link;
   xSemaphoreGive(shared_mux);
-  return String(link_name(link)) + (ble_connected() ? " · paired" : "");
+  return String(link_name(link)) + (ble_connected() ? L(" · paired", " · спарено") : "");
 }
 
 const App app_settings = {"Settings", LV_SYMBOL_SETTINGS, 0x9A9890, app_show, app_hide, app_subtitle,

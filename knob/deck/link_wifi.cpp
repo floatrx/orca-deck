@@ -131,14 +131,14 @@ static void serve_requests()
 
 static String wifi_problem()
 {
-  if (ever_joined && wifi_reason) return "wifi: weak signal (" + String(last_rssi) + " dBm) · rejoining";
+  if (ever_joined && wifi_reason) return L("wifi: weak signal (", "wifi: слабкий сигнал (") + String(last_rssi) + L(" dBm) · rejoining", " dBm) · перепідключаюсь");
   switch (wifi_reason) {
     case 0: return "wifi…";
-    case WIFI_REASON_NO_AP_FOUND: return "wifi: network not found on 2.4 GHz";
+    case WIFI_REASON_NO_AP_FOUND: return L("wifi: network not found on 2.4 GHz", "wifi: мережу 2.4 ГГц не знайдено");
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-    case WIFI_REASON_HANDSHAKE_TIMEOUT: return "wifi: wrong password?";
-    default: return "wifi: reason " + String(wifi_reason);
+    case WIFI_REASON_HANDSHAKE_TIMEOUT: return L("wifi: wrong password?", "wifi: хибний пароль?");
+    default: return L("wifi: reason ", "wifi: помилка ") + String(wifi_reason);
   }
 }
 
@@ -218,7 +218,7 @@ static bool send_command(const Command &c)
   }
   http.end();
   if (undelivered(code)) return false;
-  set_status(code == 200, ok ? c.kind + " ok" : c.kind + " failed" + (code != 200 ? " HTTP " + String(code) : "") +
+  set_status(code == 200, ok ? c.kind + L(" ok", " ок") : c.kind + L(" failed", " не вдалось") + (code != 200 ? " HTTP " + String(code) : "") +
                               (note.length() ? ": " + note : ""));
   return true;
 }
@@ -226,7 +226,7 @@ static bool send_command(const Command &c)
 static void retry_later(const Command &c)
 {
   if (millis() - c.queued_at > RETRY_FOR_MS) {
-    set_status(false, c.kind + " dropped: bridge unreachable");
+    set_status(false, c.kind + L(" dropped: bridge unreachable", " скасовано: бридж недоступний"));
     return;
   }
   xSemaphoreTake(shared_mux, portMAX_DELAY);
@@ -277,7 +277,7 @@ static void wifi_task(void *)
       joined = false;
       // Wi-Fi off is the user's choice, not the problem: the missing link is Bluetooth (user, 2026-11-14: «вимкнений
       // Wi-Fi, а ти показуєш … Wi-Fi off»).
-      if (!relay) set_status(false, ble_connected() ? "waiting for the relay…" : "Bluetooth: looking for the Mac…");
+      if (!relay) set_status(false, ble_connected() ? L("waiting for the relay…", "чекаю на релей…") : L("Bluetooth: looking for the Mac…", "Bluetooth: шукаю Мак…"));
       vTaskDelay(pdMS_TO_TICKS(250));
       continue;
     }

@@ -31,9 +31,9 @@ static int set_len(int s) { return strlen(SETS[s]) + 1; }  // + JOIN
 
 static String item(int s, int i)
 {
-  if (i == 0) return "JOIN";
+  if (i == 0) return L("JOIN", "ГОТОВО");
   char c = SETS[s][i - 1];
-  return c == ' ' ? "space" : String(c);
+  return c == ' ' ? L("space", "пробіл") : String(c);
 }
 
 static bool saved(const String &ssid, bool *from_mac = nullptr)
@@ -47,7 +47,7 @@ static bool saved(const String &ssid, bool *from_mac = nullptr)
   return false;
 }
 
-static String signal(int rssi) { return rssi > -60 ? "strong" : rssi > -72 ? "good" : "weak"; }
+static String signal(int rssi) { return rssi > -60 ? L("strong", "сильний") : rssi > -72 ? L("good", "добрий") : L("weak", "слабкий"); }
 
 static void show_list(bool on)
 {
@@ -82,7 +82,7 @@ static void paint()
         set_text(names[slot], "");
         set_text(values[slot], "");
       } else if (i == (int)found.size()) {
-        set_text(names[slot], scanning ? "scanning…" : "Scan again");
+        set_text(names[slot], scanning ? L("scanning…", "шукаю…") : L("Scan again", "Шукати знову"));
         set_text(values[slot], "");
       } else {
         const WifiScanItem &it = found[i];
@@ -91,7 +91,7 @@ static void paint()
         set_text(values[slot], signal(it.rssi) + (it.open ? " · open" : "") + (have ? (mac ? " · saved (Mac)" : " · saved") : ""));
       }
     }
-    set_text(hint, fresh_result ? result : found.empty() ? "" : "tap: password · hold: forget");
+    set_text(hint, fresh_result ? result : found.empty() ? "" : L("tap: password · hold: forget", "тап: пароль · утримай: забути"));
     lv_obj_set_style_text_color(hint, lv_color_hex(fresh_result ? C_DONE : C_MUTED), 0);
   } else if (stage == KEYS) {
     set_text(title, target);
@@ -112,11 +112,11 @@ static void paint()
     String sets;
     for (int s = 0; s < SET_COUNT; s++) sets += String(s ? "  " : "") + (s == set ? "#F1EFE9 " : "#55534F ") + SET_NAMES[s] + "#";
     set_text(sets_label, sets);
-    set_text(hint, fresh_result ? result : "tap: type · hold: delete");
+    set_text(hint, fresh_result ? result : L("tap: type · hold: delete", "тап: ввести · утримай: стерти"));
     lv_obj_set_style_text_color(hint, lv_color_hex(fresh_result ? C_ATTENTION : C_MUTED), 0);
   } else {
     set_text(title, target);
-    set_text(hint, "joining…");
+    set_text(hint, L("joining…", "підключаюсь…"));
     lv_obj_set_style_text_color(hint, lv_color_hex(C_MUTED), 0);
   }
 }

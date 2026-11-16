@@ -127,9 +127,9 @@ void mac_tick()
 
 static String subtitle()
 {
-  if (volume < 0) return "no Mac yet";
+  if (volume < 0) return L("no Mac yet", "Мак ще не на зв’язку");
   if (now_playing.length()) return now_playing;
-  return muted ? "muted" : "volume " + String(volume) + "%";
+  return muted ? L("muted", "без звуку") : L("volume ", "гучність ") + String(volume) + "%";
 }
 
 static void show()
@@ -179,7 +179,7 @@ void mac_create()
   lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -64);
   value_label = make_label(page, &lv_font_montserrat_48, C_INK, -8, 160);
   unit_label = make_label(page, &deck_16, C_MUTED, 30, 100);
-  set_text(unit_label, "volume");
+  set_text(unit_label, L("volume", "гучність"));
   flash_label = make_label(page, &lv_font_montserrat_48, C_WORKING, -8, 220);
   lv_obj_add_flag(flash_label, LV_OBJ_FLAG_HIDDEN);
   output_label = make_label(page, &deck_14, C_MUTED, 30, 160);
@@ -190,7 +190,7 @@ void mac_create()
   title_label = make_label(page, &deck_16, C_INK, 94, 230);
   lv_label_set_long_mode(title_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
   hint_label = make_label(page, &deck_14, C_MUTED, 134, 170);
-  set_text(hint_label, "tap play · swipe track");
+  set_text(hint_label, L("tap play · swipe track", "тап: пуск · свайп: трек"));
   paint();
 }
 

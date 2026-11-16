@@ -19,17 +19,29 @@ struct List {
 };
 // The lists are content, in Ukrainian as the user speaks (user, 2026-11-14: «додамо ще режими … так чи ні …
 // покрути ще»). A segment named AGAIN spins the wheel once more by itself when it wins.
-static const char *const AGAIN = "Покрути ще";
-static const List LISTS[] = {
+static const char *const AGAIN_UA = "Покрути ще", *const AGAIN_EN = "Spin again";
+static const List LISTS_UA[] = {
     {"Так / Ні", {"Так", "Ні", "Так", "Ні", "Покрути ще", nullptr}},
     {"Магічна куля", {"Так", "Ні", "Можливо", "Точно так", "Навряд", "Пізніше", "Звісно", "Ні за що"}},
-    {"Мерджимо?", {"Так", "Ні", "Після рев'ю", "Спершу тести", "Покрути ще", nullptr}},
+    {"Мерджимо?", {"Так", "Ні", "Після рев’ю", "Спершу тести", "Покрути ще", nullptr}},
     {"Монетка", {"Орел", "Решка", nullptr}},
     {"Обід", {"Піца", "Суші", "Бургер", "Борщ", "Шаурма", "Салат", nullptr}},
     {"Перерва", {"Пройдись", "Кава", "Розминка", "Вода", "Музика", "Без екрана", nullptr}},
     {"Кубик", {"1", "2", "3", "4", "5", "6", nullptr}},
 };
-static const int LIST_COUNT = sizeof(LISTS) / sizeof(LISTS[0]);
+// The same lists in English (Settings → language), in the same order.
+static const List LISTS_EN[] = {
+    {"Yes / No", {"Yes", "No", "Yes", "No", "Spin again", nullptr}},
+    {"Magic 8-ball", {"Yes", "No", "Maybe", "Definitely", "Unlikely", "Later", "Of course", "No way"}},
+    {"Merge it?", {"Yes", "No", "After review", "Tests first", "Spin again", nullptr}},
+    {"Coin", {"Heads", "Tails", nullptr}},
+    {"Lunch", {"Pizza", "Sushi", "Burger", "Borscht", "Shawarma", "Salad", nullptr}},
+    {"Break", {"Walk", "Coffee", "Stretch", "Water", "Music", "No screen", nullptr}},
+    {"Dice", {"1", "2", "3", "4", "5", "6", nullptr}},
+};
+#define LISTS (settings.lang ? LISTS_EN : LISTS_UA)
+#define AGAIN (settings.lang ? AGAIN_EN : AGAIN_UA)
+static const int LIST_COUNT = sizeof(LISTS_UA) / sizeof(LISTS_UA[0]);
 static const uint32_t COLORS[MAX_SEG] = {0x4CC3FF, 0xFF7A1A, 0x3DDC84, 0xB18CFF, 0xFFD166, 0xFF7A9A, 0x7FD1B9, 0xD97757};
 
 static lv_obj_t *page, *segs[MAX_SEG], *labels[MAX_SEG], *pointer, *hubcap, *list_label, *winner_label, *hint_label;
@@ -96,7 +108,7 @@ static void show_winner(bool on)
   // "Spin again" won: show it a moment, then the wheel spins itself.
   respin_at = on && !strcmp(LISTS[list].items[under_pointer()], AGAIN) ? millis() + 900 : 0;
   on ? lv_obj_add_flag(list_label, LV_OBJ_FLAG_HIDDEN) : lv_obj_clear_flag(list_label, LV_OBJ_FLAG_HIDDEN);
-  set_text(hint_label, on ? "tap: again · swipe: list" : "flick the crown · tap: spin");
+  set_text(hint_label, on ? L("tap: again · swipe: list", "тап: ще раз · свайп: список") : L("flick the crown · tap: spin", "крутни колесо · тап: запуск"));
 }
 
 static void kick(float speed)

@@ -60,7 +60,7 @@ void battery_tick()
   static bool warned = false;  // under 15 %: one banner and a buzz; again only after it was above 20 %
   if (level >= 0 && level < 15 && !warned) {
     warned = true;
-    banner_show_app(&app_settings, "knob battery " + String(level) + "%");
+    banner_show_app(&app_settings, L("knob battery ", "батарея шайби ") + String(level) + "%");
     haptic_buzz(2);
   } else if (level > 20 || usb) {
     warned = false;

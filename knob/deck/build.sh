@@ -22,7 +22,15 @@ if [ "${1:-}" = upload ]; then
   # A failed upload must still bring the relay back (2026-11-14: set -e left it booted out and the BLE link down).
   STATUS=0
   arduino-cli upload -p "$PORT" --fqbn "$FQBN" --input-dir "$BUILD" 2>&1 | tr '\r' '\n' | grep -E 'Hard resetting|rror' | tail -1 || STATUS=1
-  [ "$LOADED" = yes ] && launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  # Always bring the relay back when it is installed, not only when it was up before: one failed bootstrap
+  # (2026-11-15 22:09) otherwise left every later build seeing "not loaded" and the BLE link stayed down overnight.
+  if [ -f "$PLIST" ]; then
+    for _ in 1 2 3; do
+      launchctl print "$AGENT" >/dev/null 2>&1 && break
+      launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || sleep 1
+    done
+    launchctl print "$AGENT" >/dev/null 2>&1 || echo "relay agent did not come back: launchctl bootstrap gui/$(id -u) $PLIST"
+  fi
   [ "$STATUS" = 0 ] || exit 1
   # Opening the port while the S3 is still booting wedged its USB-Serial-JTAG three times (2026-11-14): silent until
   # a power cycle, esptool included. Give it time before a test driver opens the port.
