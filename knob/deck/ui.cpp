@@ -918,8 +918,20 @@ static void run_test(const String &line)
   test_report(line);
 }
 
-static void knob_left(void *, void *) { pending_steps--; }
-static void knob_right(void *, void *) { pending_steps++; }
+// The physical detents' times: the crown's speed for list acceleration (ux.cpp accel_step). Test turns ("T turn")
+// do not pass here, so they never accelerate.
+static volatile uint32_t detent_at[8];
+static volatile uint8_t detent_i = 0;
+static void mark_detent() { detent_at[detent_i++ % 8] = millis(); }
+int crown_rate()  // detents in the last 150 ms
+{
+  uint32_t now = millis();
+  int n = 0;
+  for (int k = 0; k < 8; k++) n += detent_at[k] && now - detent_at[k] < 150;
+  return n;
+}
+static void knob_left(void *, void *) { pending_steps--; mark_detent(); }
+static void knob_right(void *, void *) { pending_steps++; mark_detent(); }
 
 static void loop_tick(lv_timer_t *)
 {

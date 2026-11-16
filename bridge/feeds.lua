@@ -256,7 +256,9 @@ function feeds.new(ctx)
           e.m >= 30 and C.attention or e.m >= 10 and C.yellow or C.working, fc.duration(e.m, S.lang ~= "en"))
       end
       local longest = list[1] and fc.duration(list[1].m, S.lang ~= "en")
-      return { h = T("working now", "зараз працюють"), s = #list > 0 and #list .. T(" working · ", " працює · ") .. longest or T("nobody works", "ніхто не працює"),
+      local long = 0
+      for _, e in ipairs(list) do if e.m >= 30 then long = long + 1 end end
+      return { bd = long, bc = C.attention, h = T("working now", "зараз працюють"), s = #list > 0 and #list .. T(" working · ", " працює · ") .. longest or T("nobody works", "ніхто не працює"),
         pg = { { n = T("turns", "ходи") .. " · " .. #list, i = items, hd = 2, tp = 1, e = T("nobody is working", "ніхто не працює"),
           ht = T("tap: go · hold ×2: stop", "тап: туди · утримай ×2: стоп") } } }
     end,
@@ -397,7 +399,9 @@ function feeds.new(ctx)
         end
       end
       table.sort(items, function(x, y) return (tonumber((x.b or ""):match("%d+")) or -1) > (tonumber((y.b or ""):match("%d+")) or -1) end)
-      return { h = T("context", "контекст"), s = worst >= 0 and T("fullest ", "найповніший ") .. worst .. "%" or T("chat sessions", "чат-сесії"),
+      local full = 0
+      for _, it in ipairs(items) do if (tonumber((it.b or ""):match("%d+")) or 0) >= 80 then full = full + 1 end end
+      return { bd = full, bc = C.red, h = T("context", "контекст"), s = worst >= 0 and T("fullest ", "найповніший ") .. worst .. "%" or T("chat sessions", "чат-сесії"),
         pg = { { n = T("sessions", "сесії") .. " · " .. #items, i = items, hd = 2, tp = 1, e = T("no chat sessions", "немає чат-сесій"),
           ht = T("tap: go · hold: summary", "тап: туди · утримай: підсумок") } } }
     end,
@@ -546,7 +550,9 @@ function feeds.new(ctx)
             or T("approved", "схвалено")), bad and C.red or not pr.mine and C.yellow or C.done)
         end
       end
-      return { h = T("today", "сьогодні"), s = fc.duration(total, ua) .. T(" of agent work · ", " роботи агентів · ") .. ncommits .. T(" commits", " комітів"),
+      local reviews = 0
+      for _, pr in ipairs(ctx.prs() or {}) do if not pr.mine then reviews = reviews + 1 end end
+      return { bd = reviews, bc = C.yellow, h = T("today", "сьогодні"), s = fc.duration(total, ua) .. T(" of agent work · ", " роботи агентів · ") .. ncommits .. T(" commits", " комітів"),
         pg = { { n = T("agents", "агенти") .. " · " .. #items, i = items, tp = 1, e = T("a quiet day so far", "поки тихий день"), ht = T("tap: go", "тап: перейти") },
           { n = T("commits", "коміти") .. " · " .. ncommits, i = commits, tp = 1, e = T("no commits today", "сьогодні без комітів"), ht = T("tap: go", "тап: перейти") },
           { n = "PR · " .. #prs, i = prs, tp = 1, e = T("no PR news", "PR без новин"), ht = T("tap: open", "тап: відкрити") } } }
@@ -630,7 +636,7 @@ function feeds.new(ctx)
       else
         i = item("cc", T("The Mac is yours", "Мак вільний"), T("nobody drives it", "ніхто не керує"), C.done)
       end
-      return { h = T("hands off", "руки геть"), s = mode == "active" and T("Claude drives!", "Claude керує!") or mode == "interrupted" and T("interrupted", "перервано") or T("the Mac is yours", "Мак вільний"),
+      return { bd = mode == "active" and 1 or 0, bc = C.red, h = T("hands off", "руки геть"), s = mode == "active" and T("Claude drives!", "Claude керує!") or mode == "interrupted" and T("interrupted", "перервано") or T("the Mac is yours", "Мак вільний"),
         pg = { { n = T("the Mac", "Мак"), i = { i }, tp = 1, ht = mode == "active" and T("tap: take it back", "тап: забрати керування") or "" } } }
     end,
     act = function(action)
@@ -806,7 +812,7 @@ function feeds.new(ctx)
         local services = p.services and p.services.edges and #p.services.edges or 0
         rail[#rail + 1] = item("r:" .. (p.id or ""), p.name or "?", services .. T(" services", " сервісів"), C.violet)
       end
-      return { h = T("deploys", "деплої"), s = failing > 0 and failing .. T(" failing", " впало") or #items .. " Vercel · " .. #rail .. " Railway",
+      return { bd = failing, bc = C.red, h = T("deploys", "деплої"), s = failing > 0 and failing .. T(" failing", " впало") or #items .. " Vercel · " .. #rail .. " Railway",
         pg = { { n = "Vercel · " .. #items, i = items, tp = 1, e = T("reading vercel…", "читаю vercel…"), ht = T("tap: open", "тап: відкрити") },
           { n = "Railway · " .. #rail, i = rail, tp = 1, e = T("reading railway…", "читаю railway…"), ht = T("tap: open", "тап: відкрити") } } }
     end,

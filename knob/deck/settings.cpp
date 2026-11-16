@@ -10,7 +10,7 @@
 Settings settings;
 
 static Preferences prefs;
-static lv_obj_t *page, *title, *hint;
+static lv_obj_t *page, *title, *hint, *rim;
 static const int VISIBLE = 5;
 static lv_obj_t *names[VISIBLE], *values[VISIBLE];
 static int focus = 0;               // index into `rows`
@@ -179,6 +179,7 @@ void settings_page_refresh()
     if (used && editing && i == focus) value = "- " + value + " +";  // the row that has the crown
     set_text(values[slot], value);
   }
+  rim_set(rim, focus, rows->size(), VISIBLE);
   bool deck = rows == &DECK_ROWS;
   if (editing) {
     set_text(hint, L("crown: change · tap: save", "колесо: змінити · тап: зберегти"));
@@ -301,6 +302,7 @@ void settings_page_create()
     values[slot] = make_label(page, mid ? &deck_16 : &deck_14, mid ? C_WORKING : 0x55534F, y + 10, 240);
   }
   hint = make_label(page, &deck_14, C_MUTED, 122, 244);  // ~250 px of screen at this height
+  rim = rim_create(page);
 }
 
 void settings_page_show(bool show, bool deck_rows)

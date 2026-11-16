@@ -260,6 +260,8 @@ static void apply_feed(const String &body)
   f.note_seq = doc["mt"] | 0;
   f.alert = doc["al"] | "";
   f.alert_seq = doc["an"] | 0;
+  f.badge = doc["bd"] | 0;
+  f.badge_color = doc["bc"] | C_ATTENTION;
   for (JsonObject p : doc["pg"].as<JsonArray>()) {
     FeedPage page;
     page.name = p["n"] | "";
@@ -280,6 +282,12 @@ static void apply_feed(const String &body)
     }
     f.pages.push_back(page);
   }
+  feed_put(f);
+}
+
+void feed_put(const Feed &given)
+{
+  Feed f = given;
   xSemaphoreTake(shared_mux, portMAX_DELAY);
   bool found = false;
   for (Feed &old : shared.feeds) {
@@ -294,6 +302,20 @@ static void apply_feed(const String &body)
     shared.feeds.push_back(f);
   }
   xSemaphoreGive(shared_mux);
+}
+
+int feed_badge(const char *id, uint32_t &color)
+{
+  int n = 0;
+  xSemaphoreTake(shared_mux, portMAX_DELAY);
+  for (const Feed &f : shared.feeds) {
+    if (f.id == id) {
+      n = f.badge;
+      color = f.badge_color;
+    }
+  }
+  xSemaphoreGive(shared_mux);
+  return n;
 }
 
 bool feed_take(const String &id, Feed &out)

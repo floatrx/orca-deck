@@ -27,7 +27,9 @@ static int main_focus = 0;   // the hub's row while the folder is open: swipe do
 static int focus = 0;  // the centre row's app
 
 static const int SLOTS = 5;  // rows on screen: the centre one and two on each side
-static lv_obj_t *page, *link_label, *folder_label;
+static lv_obj_t *page, *link_label, *folder_label, *hub_rim;
+static lv_obj_t *counts[5];  // the list's badge counters, one per slot
+static Accel hub_accel;
 static lv_obj_t *rows[SLOTS], *badges[SLOTS], *icons[SLOTS], *names[SLOTS], *subs[SLOTS];
 // The Clock's badge is a live analog face (LVGL's symbols have no clock): an hour and a minute hand per slot.
 static lv_obj_t *hands[SLOTS][2];
@@ -125,6 +127,53 @@ const char *hub_shown_name(const App *app)
   return app->name;  // Clawd, Claude, Wi-Fi
 }
 
+static bool in_list(const App *const *list, int count, const App *app)
+{
+  for (int i = 0; i < count; i++)
+    if (list[i] == app) return true;
+  return false;
+}
+
+// The counter on an app's icon: things that want you now (user, 2026-11-16 ideas round). 0: no counter.
+int hub_badge(const App *app, uint32_t &color)
+{
+  color = C_ATTENTION;
+  if (!shared_mux) return 0;
+  if (app == &app_deck) {  // agents that need you
+    int n = 0;
+    for (const Agent &a : deck_all_agents()) n += a.bucket == "attention";
+    return n;
+  }
+  if (app == &app_prs) {  // my PRs with failed checks
+    int n = 0;
+    xSemaphoreTake(shared_mux, portMAX_DELAY);
+    for (const PrItem &p : shared.prs) n += p.mine && p.checks == "fail";
+    xSemaphoreGive(shared_mux);
+    color = 0xE5484D;
+    return n;
+  }
+  if (app == &app_dev) {  // the folder: the sum of its apps' counters
+    int n = 0;
+    uint32_t c;
+    for (int i = 0; i < DEV_COUNT; i++) n += hub_badge(DEV_APPS[i], c);
+    return n;
+  }
+  if (in_list(DEV_APPS, DEV_COUNT, app)) return feed_badge(feed_id(app), color);
+  return 0;
+}
+
+static void set_count(lv_obj_t *label, int n, uint32_t color)
+{
+  if (!label) return;
+  if (n <= 0) {
+    lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+  set_text(label, n > 9 ? "9+" : String(n));
+  lv_obj_set_style_bg_color(label, lv_color_hex(color), 0);
+  lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void refresh()
 {
   if (!page || booting || lv_obj_has_flag(page, LV_OBJ_FLAG_HIDDEN)) return;
@@ -133,6 +182,7 @@ static void refresh()
   bool linked = shared_mux != nullptr;
   grid_show(settings.hub_grid);
   if (settings.hub_grid) grid_set(APPS, APP_COUNT, focus);
+  rim_set(hub_rim, focus, APP_COUNT, settings.hub_grid ? 7 : 5);
   for (int slot = 0; slot < SLOTS; slot++) {
     int i = focus + slot - SLOTS / 2;
     if (settings.hub_grid || i < 0 || i >= APP_COUNT) {
@@ -155,6 +205,9 @@ static void refresh()
     }
     mic ? lv_obj_clear_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(mic_badge[slot], LV_OBJ_FLAG_HIDDEN);
     set_text(names[slot], hub_shown_name(app));
+    uint32_t count_color;
+    int n = hub_badge(app, count_color);
+    set_count(counts[slot], n, count_color);
     set_text(subs[slot], linked && slot == SLOTS / 2 && app->subtitle ? app->subtitle() : "");
   }
   if (!linked) return;
@@ -164,13 +217,6 @@ static void refresh()
 }
 
 static void open_app(int i);
-
-static bool in_list(const App *const *list, int count, const App *app)
-{
-  for (int i = 0; i < count; i++)
-    if (list[i] == app) return true;
-  return false;
-}
 
 // Points the hub at the list that holds `app` (a banner may open an app in the folder from anywhere).
 static void list_for(const App *app)
@@ -187,8 +233,21 @@ static void list_for(const App *app)
   }
 }
 
+// An app outside both lists (the notification centre): it opens over the hub, swipe down comes back.
+static void open_unlisted(const App *app)
+{
+  if (current == app) return;
+  if (current) current->hide();
+  current = app;
+  lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
+  haptic_click();
+  app->show();
+  bloom_open(0, -150, app->color);
+}
+
 void hub_open(const App *app)
 {
+  if (!in_list(MAIN_APPS, MAIN_COUNT, app) && !in_list(DEV_APPS, DEV_COUNT, app)) return open_unlisted(app);
   list_for(app);
   for (int i = 0; i < APP_COUNT; i++) {
     if (APPS[i] != app) continue;
@@ -211,11 +270,14 @@ static void open_app(int i)
     refresh();
     return;
   }
+  int bx = -107, by = 0;  // the bloom starts at the icon: the list's centre badge, or the grid's icon
+  if (settings.hub_grid) grid_place(i, bx, by);
   focus = i;
   current = APPS[i];
   lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
   haptic_click();
   current->show();
+  bloom_open(bx, by, current->color);
 }
 
 void hub_home()
@@ -259,8 +321,8 @@ void hub_turn(int step)
     if (current->turn) current->turn(step);
     return;
   }
-  int next = focus + step;
-  if (next < 0 || next >= APP_COUNT) return;
+  int next = max(0, min(APP_COUNT - 1, focus + accel_step(hub_accel, step)));
+  if (next == focus) return;  // the list's end: no tick
   focus = next;
   haptic_tick();
   refresh();
@@ -309,6 +371,8 @@ static void swipe(lv_dir_t dir)
       haptic_home();
       folder_title();
       refresh();
+    } else {
+      open_unlisted(&app_notif);  // the hub itself: down pulls the notification centre, as on a phone
     }
     return;
   }
@@ -468,7 +532,10 @@ void hub_test(const String &verb, const String &arg)
       if (arg == MAIN_APPS[i]->name) found = MAIN_APPS[i];
     for (int i = 0; i < DEV_COUNT; i++)
       if (arg == DEV_APPS[i]->name) found = DEV_APPS[i];
-    if (found) {
+    if (arg == app_notif.name) {
+      if (current) hub_home();
+      open_unlisted(&app_notif);
+    } else if (found) {
       if (current) hub_home();
       list_for(found);
       for (int i = 0; i < APP_COUNT; i++)
@@ -561,7 +628,20 @@ void hub_create()
     lv_label_set_text(sub, "");
     lv_obj_align(sub, LV_ALIGN_LEFT_MID, text_x, 20);
     if (!mid) lv_obj_add_flag(sub, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *count = counts[slot] = lv_label_create(row);  // over the badge's top-right, like a phone's
+    lv_obj_set_style_text_font(count, &deck_bold_16, 0);
+    lv_obj_set_style_text_color(count, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(count, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(count, 11, 0);
+    lv_obj_set_style_pad_hor(count, 6, 0);
+    lv_obj_set_style_pad_ver(count, 1, 0);
+    lv_obj_set_style_min_width(count, 22, 0);
+    lv_obj_set_style_text_align(count, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(count, LV_ALIGN_LEFT_MID, (mid ? 8 : 14) + BADGE[slot] - 14, -BADGE[slot] / 2 + 2);
+    lv_obj_add_flag(count, LV_OBJ_FLAG_HIDDEN);
   }
+  hub_rim = rim_create(page);
   grid_create(page);
   link_label = make_label(page, &deck_14, C_MUTED, 160, 120);
   folder_label = make_label(page, &deck_bold_16, 0x7AA2F7, -158, 140);

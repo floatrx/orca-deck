@@ -115,6 +115,8 @@ struct FeedPage {
 struct Feed {
   String id, header, sub, note, alert;  // alert: a banner with a buzz, once per alert_seq
   uint32_t note_seq = 0, alert_seq = 0, version = 0;
+  int badge = 0;                // the hub icon's counter: things that want you (0: none)
+  uint32_t badge_color = C_ATTENTION;
   std::vector<FeedPage> pages;
 };
 
@@ -285,7 +287,11 @@ extern const App app_deck, app_settings, app_timer, app_clock, app_mac, app_jog,
     app_prompts, app_mic, app_prs, app_wifi, app_snake, app_pet;
 // app_feed.cpp — the developer feed apps, one template (.work/plans/knob-dev-apps.md)
 extern const App app_queue, app_turns, app_git, app_context, app_launch, app_digest, app_wrap, app_hands, app_logs, app_diff,
-    app_deploy, app_ask, app_shutter, app_toggl, app_macros;
+    app_deploy, app_ask, app_shutter, app_toggl, app_macros, app_notif;
+int hub_badge(const App *app, uint32_t &color);  // hub.cpp: the counter on an app's icon (0: none)
+void feed_put(const Feed &f);
+int feed_badge(const char *id, uint32_t &color);  // a feed's counter without copying it
+const char *feed_id(const App *app);  // app_feed.cpp: the feed id of a feed app  // link.cpp: a feed the knob builds itself (the notification centre)
 void feed_create();
 void feed_tick();
 const char *feed_name(const App *app);  // a feed app's shown name; nullptr for other apps
@@ -303,11 +309,27 @@ void hub_tick();
 void hub_open(const App *app);
 const char *hub_shown_name(const App *app);  // the app's name on screen (Ukrainian)
 
+// ux.cpp — shared UX pieces: the rim scroll indicator, the crown's acceleration, the app-open bloom
+struct Accel {
+  uint32_t at = 0;
+  int dir = 0;
+};
+lv_obj_t *rim_create(lv_obj_t *parent);
+void rim_set(lv_obj_t *arc, int pos, int count, int visible);
+int accel_step(Accel &a, int step);
+int crown_rate();  // ui.cpp: physical detents in the last 150 ms
+void bloom_open(int x, int y, uint32_t color);  // centre-relative px
+
+// banner.cpp — the notification centre: the banners' history
+void banner_history_open(const String &key);
+void banner_history_clear();
+
 // hub_grid.cpp — the hub as a honeycomb of round icons (Settings → Hub layout)
 void grid_create(lv_obj_t *parent);
 void grid_show(bool on);
 void grid_set(const App *const *apps, int count, int focus);  // the list and the focused icon; the grid eases to it
-int grid_hit(int x, int y);  // the icon under a touch (screen px), -1 for none
+int grid_hit(int x, int y);  // the icon under a touch (centre-relative px), -1 for none
+bool grid_place(int i, int &x, int &y);  // where icon i is drawn (centre-relative); false when off screen
 void grid_tick(uint32_t now);
 String grid_report();
 

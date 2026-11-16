@@ -18,7 +18,9 @@
 #define MIN_SCALE 0.34f
 #define GLIDE 12.0f      // 1/s: how fast the rows settle on the focus
 
-static lv_obj_t *layer, *ring, *name_label, *sub_label;
+static lv_obj_t *layer, *ring, *name_label, *sub_label, *counts[MAX_ICONS];
+static int badge_n[MAX_ICONS];          // the counters, read once a second (grid_set), not every frame
+static uint32_t badge_c[MAX_ICONS];
 static lv_obj_t *icons[MAX_ICONS], *glyphs[MAX_ICONS], *hands[MAX_ICONS][2], *mics[MAX_ICONS], *canvases[MAX_ICONS];
 static lv_color_t *canvas_buf[MAX_ICONS];
 static lv_point_t hand_pts[MAX_ICONS][2][2];
@@ -91,6 +93,7 @@ static void layout()
   for (int i = 0; i < MAX_ICONS; i++) {
     if (i >= count) {
       lv_obj_add_flag(icons[i], LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(counts[i], LV_OBJ_FLAG_HIDDEN);
       continue;
     }
     float gx, gy;
@@ -99,6 +102,7 @@ static void layout()
     lens(gx + pan, gy + scroll, p);
     if (!p.visible) {
       lv_obj_add_flag(icons[i], LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(counts[i], LV_OBJ_FLAG_HIDDEN);
       continue;
     }
     int size = (int)p.size;
@@ -113,6 +117,15 @@ static void layout()
     lv_obj_set_style_text_font(glyphs[i], size >= 62 ? &lv_font_montserrat_28 : &lv_font_montserrat_20, 0);
     special || size < 34 ? lv_obj_add_flag(glyphs[i], LV_OBJ_FLAG_HIDDEN) : lv_obj_clear_flag(glyphs[i], LV_OBJ_FLAG_HIDDEN);
     if (a == &app_clock) clock_hands(i, size);
+    int n = size >= 40 ? badge_n[i] : 0;  // tiny rim icons carry no counter: it would hide them
+    if (n > 0) {
+      set_text(counts[i], n > 9 ? "9+" : String(n));
+      lv_obj_set_style_bg_color(counts[i], lv_color_hex(badge_c[i]), 0);
+      lv_obj_align(counts[i], LV_ALIGN_CENTER, (int)(p.x + size * 0.36f), (int)(p.y - size * 0.36f));
+      lv_obj_clear_flag(counts[i], LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(counts[i], LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_center(mics[i]);
     if (canvases[i]) lv_obj_center(canvases[i]);
   }
@@ -157,6 +170,7 @@ void grid_set(const App *const *list, int n, int f)
   target = -gy;
   pan_target = -gx;
   if (fresh) scroll = target, pan = pan_target;  // a new list (the folder) starts in place, no glide from the old one
+  for (int i = 0; i < count; i++) badge_n[i] = hub_badge(apps[i], badge_c[i]);
   paint_icons();
   if (focus < count) {
     const App *a = apps[focus];
@@ -172,6 +186,14 @@ void grid_show(bool on)
   if (!layer || on == shown) return;
   shown = on;
   on ? lv_obj_clear_flag(layer, LV_OBJ_FLAG_HIDDEN) : lv_obj_add_flag(layer, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool grid_place(int i, int &x, int &y)
+{
+  if (i < 0 || i >= count || !places[i].visible) return false;
+  x = (int)places[i].x;
+  y = (int)places[i].y;
+  return true;
 }
 
 int grid_hit(int x, int y)
@@ -276,6 +298,18 @@ void grid_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(glyphs[i], lv_color_hex(C_BG), 0);
     lv_obj_set_style_text_font(glyphs[i], &lv_font_montserrat_28, 0);
     lv_obj_center(glyphs[i]);
+  }
+  for (int i = 0; i < MAX_ICONS; i++) {
+    lv_obj_t *c = counts[i] = lv_label_create(layer);
+    lv_obj_set_style_text_font(c, &deck_bold_16, 0);
+    lv_obj_set_style_text_color(c, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(c, 11, 0);
+    lv_obj_set_style_pad_hor(c, 6, 0);
+    lv_obj_set_style_pad_ver(c, 1, 0);
+    lv_obj_set_style_min_width(c, 22, 0);
+    lv_obj_set_style_text_align(c, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
   }
   lv_obj_move_foreground(ring);
 

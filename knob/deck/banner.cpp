@@ -13,6 +13,89 @@ static String wt_id, agent_id;
 static const App *target = nullptr;  // an app's alert: the tap opens it instead of an agent
 static uint32_t hide_at = 0;
 
+// The notification centre (swipe down in the hub): the last banners, newest first. A banner is gone in 3 s; this
+// keeps what it said and where its tap would have gone. Published as the local feed "notif" (app_feed.cpp draws it).
+#define HISTORY_MAX 20
+struct Notice {
+  uint32_t id = 0;
+  time_t at = 0;
+  String name, line, wt, agent;
+  uint32_t color = C_IDLE;
+  const App *app = nullptr;
+};
+static std::deque<Notice> history;
+static uint32_t notice_seq = 0;
+
+static void publish()
+{
+  Feed f;
+  f.id = "notif";
+  f.header = L("notifications", "сповіщення");
+  f.sub = history.empty() ? String(L("all quiet", "тихо")) : String(history.size()) + L(" recent", " останніх");
+  FeedPage p;
+  p.name = L("recent", "останні") + String(" · ") + history.size();
+  p.empty = L("No notifications yet", "Сповіщень поки немає");
+  p.hint = L("tap: open · hold: clear", "тап: відкрити · утримай: очистити");
+  p.tap = true;
+  p.hold = 2;
+  time_t now = time(nullptr);
+  for (const Notice &n : history) {
+    FeedItem it;
+    it.key = String(n.id);
+    it.title = n.name;
+    it.detail = n.line;
+    it.color = n.color;
+    if (n.at > 1700000000 && now >= n.at) {
+      long ago = (now - n.at) / 60;
+      if (ago < 60) it.badge = ago ? String(ago) + L(" m", " хв") : String(L("now", "щойно"));
+      else {
+        time_t local = n.at + tz_offset_min() * 60;
+        struct tm t;
+        gmtime_r(&local, &t);
+        char hm[8];
+        snprintf(hm, sizeof(hm), "%02d:%02d", t.tm_hour, t.tm_min);
+        it.badge = hm;
+      }
+    }
+    p.items.push_back(it);
+  }
+  f.pages.push_back(p);
+  feed_put(f);
+}
+
+static void remember(const String &name, const String &line, uint32_t color, const App *app, const String &wt, const String &agent)
+{
+  Notice n;
+  n.id = ++notice_seq;
+  n.at = time(nullptr);
+  n.name = name;
+  n.line = line;
+  n.color = color;
+  n.app = app;
+  n.wt = wt;
+  n.agent = agent;
+  history.push_front(n);
+  while (history.size() > HISTORY_MAX) history.pop_back();
+  publish();
+}
+
+void banner_history_open(const String &key)
+{
+  for (const Notice &n : history) {
+    if (String(n.id) != key) continue;
+    Notice copy = n;
+    if (copy.app) hub_open(copy.app);
+    else if (copy.agent.length()) deck_open_agent(copy.wt, copy.agent);
+    return;
+  }
+}
+
+void banner_history_clear()
+{
+  history.clear();
+  publish();
+}
+
 static void set_y(void *obj, int32_t y) { lv_obj_align((lv_obj_t *)obj, LV_ALIGN_CENTER, 0, y); }
 static void set_opa(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, v, 0); }
 
@@ -47,6 +130,7 @@ static void show(const String &name, const String &line, uint32_t c)
 
 void banner_show_app(const App *app, const String &line)
 {
+  remember(hub_shown_name(app), line, app->color, app, "", "");
   if (hub_current() == app) return;  // the app on screen shows it itself
   buddy_hide();                      // an app's alert wakes the knob
   target = app;
@@ -55,6 +139,7 @@ void banner_show_app(const App *app, const String &line)
 
 void banner_show(const String &worktree, const String &agent, const String &name, const String &bucket)
 {
+  remember(name, bucket == "attention" ? L("needs you", "чекає на тебе") : L("done", "готово"), color_of(bucket), nullptr, worktree, agent);
   if (buddy_is_shown()) return;  // Clawd acts the state out himself
   wt_id = worktree;
   agent_id = agent;
@@ -102,6 +187,7 @@ void banner_tick()
 
 void banner_create()
 {
+  publish();  // the centre exists (empty) from boot
   pill = lv_obj_create(lv_layer_top());
   lv_obj_set_size(pill, 250, BANNER_H);
   lv_obj_align(pill, LV_ALIGN_CENTER, 0, BANNER_Y);

@@ -24,7 +24,7 @@ Lines on the wire (one JSON object per line, UTF-8):
   relay → knob   R {e, l, p:[[key, title, checks, mine, review, rerun], …]}   PR Radar (GET /api/prs): checks
                                            ok|fail|run|none, review approved|changes|""; e: the bridge's gh error,
                                            l: loaded once; every PRS_S, on change
-  relay → knob   G {a, h, s, m, mt, al, an, pg:[{n, i:[{k, t, d, c, b}], hd, tp, e, ht, to, last}]}   one feed app
+  relay → knob   G {a, h, s, m, mt, al, an, bd, bc, pg:[{n, i:[{k, t, d, c, b}], hd, tp, e, ht, to, last}]}   one feed app
                                            (GET /api/feeds, bridge/feeds.lua): one line per app, on change; every
                                            FEEDS_S, and at once after an "app" command
   knob → relay   V {"start":true} · V <base64 IMA-ADPCM, 16 kHz mono> · V {"end":true} | {"cancel":true}
@@ -266,6 +266,8 @@ def feed_lines(feeds):
         line = {"a": f["a"], "h": (f.get("h") or "")[:40], "s": (f.get("s") or "")[:60], "pg": pages}
         if f.get("m"):
             line["m"], line["mt"] = f["m"][:120], f.get("mt", 0)
+        if f.get("bd"):
+            line["bd"], line["bc"] = int(f["bd"]), int(f.get("bc") or 0xFF7A1A)
         if f.get("al"):
             line["al"], line["an"] = f["al"][:80], f.get("an", 0)
         out.append(encode("G", line))

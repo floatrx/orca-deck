@@ -30,7 +30,8 @@ static const FeedDef DEFS[] = {
     {&app_context, "context", "Контекст"}, {&app_launch, "launch", "Запуск"},  {&app_digest, "digest", "Дайджест"},
     {&app_wrap, "wrap", "Кінець дня"},    {&app_hands, "hands", "Руки геть"},  {&app_logs, "logs", "Лог"},
     {&app_diff, "diff", "Дифф"},          {&app_deploy, "deploy", "Деплой"},   {&app_ask, "ask", "Питання"},
-    {&app_shutter, "shutter", "Затвор"},  {&app_toggl, "toggl", "Час"},        {&app_macros, "macros", "Макроси"}};
+    {&app_shutter, "shutter", "Затвор"},  {&app_toggl, "toggl", "Час"},        {&app_macros, "macros", "Макроси"},
+    {&app_notif, "notif", "Сповіщення"}};  // local: banner.cpp builds it, its taps never go to the bridge
 static const int DEF_COUNT = sizeof(DEFS) / sizeof(DEFS[0]);
 
 struct FeedState {
@@ -40,6 +41,8 @@ struct FeedState {
   bool alert_known = false;
 };
 
+static lv_obj_t *rim;
+static Accel accel;
 static lv_obj_t *page_obj, *band, *header_label, *page_label, *rows[ROWS], *badge_label, *detail_label, *empty_label,
     *to_label, *hint_label, *note_label;
 static FeedState states[DEF_COUNT];
@@ -48,12 +51,21 @@ static Feed feed;
 static uint32_t seen_version = 0, seen_note = 0, note_at = 0, last_frame = 0, open_told = 0, lang_told = 0;
 static float pos = 0;
 
+const char *feed_id(const App *app)
+{
+  for (const FeedDef &d : DEFS)
+    if (d.app == app) return d.id;
+  return "";
+}
+
 const char *feed_name(const App *app)
 {
   for (const FeedDef &d : DEFS)
     if (d.app == app) return settings.lang ? app->name : d.ua;
   return nullptr;
 }
+
+static bool local() { return cur >= 0 && !strcmp(DEFS[cur].id, "notif"); }
 
 static const FeedPage *page_now()
 {
@@ -128,6 +140,7 @@ static void layout()
     set_text(detail_label, "");
     lv_obj_add_flag(band, LV_OBJ_FLAG_HIDDEN);
   }
+  rim_set(rim, states[cur].sel, n, 4);
 }
 
 static void paint()
@@ -194,7 +207,7 @@ static void show_index(int i)
   lv_obj_set_style_text_color(header_label, lv_color_hex(DEFS[i].app->color), 0);
   note_at = 0;
   take(true);
-  command("open");
+  if (!local()) command("open");
   open_told = millis();
 }
 
@@ -211,7 +224,7 @@ static void turn(int step)
   const FeedPage *p = page_now();
   if (!p || p->items.empty()) return;
   FeedState &s = states[cur];
-  int next = max(0, min((int)p->items.size() - 1, s.sel + step));
+  int next = max(0, min((int)p->items.size() - 1, s.sel + accel_step(accel, step)));
   if (next == s.sel) return;  // the drum's end: no tick
   s.sel = next;
   last_frame = millis();
@@ -232,6 +245,10 @@ static void tap()
   const FeedPage *p = page_now();
   const FeedItem *it = selected();
   if (!p || !p->tap || !it) return;  // the router ticks
+  if (local()) {
+    haptic_click();
+    return banner_history_open(it->key);
+  }
   command("tap", it->key);
   if (p->to.length()) pet_event(PET_SENT);
   haptic_click();
@@ -258,6 +275,11 @@ static void hold()
   } else if (p->hold == 2) {
     const FeedItem *it = selected();
     if (!it) return;
+    if (local()) {
+      banner_history_clear();
+      haptic_click(2);
+      return;
+    }
     command("hold", it->key);
     haptic_click(2);
   }
@@ -313,7 +335,7 @@ void feed_tick()
   }
   if (cur < 0 || lv_obj_has_flag(page_obj, LV_OBJ_FLAG_HIDDEN)) return;
   take(false);
-  if (now - open_told > OPEN_EVERY_MS) open_told = now, command("open");
+  if (now - open_told > OPEN_EVERY_MS && !local()) open_told = now, command("open");
   if (note_at && now - note_at > NOTE_MS) {
     note_at = 0;
     lv_obj_add_flag(note_label, LV_OBJ_FLAG_HIDDEN);
@@ -374,6 +396,7 @@ void feed_create()
   note_label = make_label(page_obj, &deck_bold_16, C_DONE, 108, 240);
   lv_label_set_long_mode(note_label, LV_LABEL_LONG_DOT);
   lv_obj_add_flag(note_label, LV_OBJ_FLAG_HIDDEN);
+  rim = rim_create(page_obj);
   hint_label = make_label(page_obj, &deck_14, C_MUTED, 132, 200);  // ~200 px of screen at this height
   lv_label_set_long_mode(hint_label, LV_LABEL_LONG_SCROLL_CIRCULAR);  // a long hint runs by instead of being cut
 }
@@ -405,3 +428,4 @@ FEED_APP(app_ask, 11, "Quick Ask", LV_SYMBOL_AUDIO, 0xFF7A9A)
 FEED_APP(app_shutter, 12, "Shutter", LV_SYMBOL_IMAGE, 0x4CC3FF)
 FEED_APP(app_toggl, 13, "Toggl", LV_SYMBOL_PLAY, 0xE57CD8)
 FEED_APP(app_macros, 14, "Macros", LV_SYMBOL_KEYBOARD, 0xFFA94D)
+FEED_APP(app_notif, 15, "Notifications", LV_SYMBOL_BELL, 0xFF7A1A)
