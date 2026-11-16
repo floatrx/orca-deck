@@ -84,6 +84,7 @@ static void clock_face(int slot, bool on)
   }
 }
 static const App *current = nullptr;  // nullptr: the hub is on screen
+static lv_point_t press_at = {180, 180};  // where the finger came down: the grid opens the icon under it
 
 // The folder's name over its list, so it never reads as the hub itself (wayfinding: where am I).
 static void folder_title()
@@ -130,9 +131,11 @@ static void refresh()
   // shared_mux comes with link_init(), after the UI is built: until then the rows go without subtitles (LVGL's
   // default "Text" showed on every label at boot when the whole refresh waited).
   bool linked = shared_mux != nullptr;
+  grid_show(settings.hub_grid);
+  if (settings.hub_grid) grid_set(APPS, APP_COUNT, focus);
   for (int slot = 0; slot < SLOTS; slot++) {
     int i = focus + slot - SLOTS / 2;
-    if (i < 0 || i >= APP_COUNT) {
+    if (settings.hub_grid || i < 0 || i >= APP_COUNT) {
       lv_obj_add_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
       continue;
     }
@@ -268,7 +271,13 @@ static void tap()
   if (wake()) return;
   if (cc_is_open()) return cc_tap();
   if (banner_take()) return;
-  if (!current) return open_app(focus);
+  if (!current) {
+    if (settings.hub_grid) {  // the icon under the finger; a tap between icons opens the focused one
+      int hit = grid_hit(press_at.x - 180, press_at.y - 180);
+      if (hit >= 0) focus = hit;
+    }
+    return open_app(focus);
+  }
   if (current->tap) current->tap();
 }
 
@@ -335,6 +344,7 @@ static void on_gesture(lv_event_t *)
 }
 static void on_pressed(lv_event_t *)
 {
+  if (lv_indev_get_act()) lv_indev_get_point(lv_indev_get_act(), &press_at);
   pressed = true;
   gestured = false;
   buddy_input();
@@ -400,7 +410,8 @@ void hub_tick()
   buddy_tick(now);
   if (!current && !buddy_is_shown()) {
     globe_tick(now);
-    draw_clawds(now);
+    if (settings.hub_grid) grid_tick(now);
+    else draw_clawds(now);
   }
   if (now - last < 1000) return;  // subtitles and the link line: once a second is enough
   last = now;
@@ -426,7 +437,7 @@ String hub_report()
   if (current == &app_mic) return "Mic " + micmute_report();
   if (current == &app_prs) return "PRs " + prs_report();
   if (current == &app_wifi) return "Wi-Fi " + wifi_app_report();
-  return current ? String(current->name) : (booting ? "hub(boot)" : in_dev ? "hub/dev" : "hub") + globe_report();
+  return current ? String(current->name) : (booting ? "hub(boot)" : in_dev ? "hub/dev" : "hub") + (settings.hub_grid ? " " + grid_report() : "") + globe_report();
 }
 
 void hub_test(const String &verb, const String &arg)
@@ -435,7 +446,10 @@ void hub_test(const String &verb, const String &arg)
     buddy_input();
     buddy_hide();
   }
-  if (verb == "tap" && arg == "banner") banner_take(true);
+  if (verb == "tap" && arg.indexOf(' ') > 0) {  // "tap 120 90": a finger at that screen point (the grid)
+    press_at = {(lv_coord_t)arg.toInt(), (lv_coord_t)arg.substring(arg.indexOf(' ') + 1).toInt()};
+    tap();
+  } else if (verb == "tap" && arg == "banner") banner_take(true);
   else if (verb == "tap") tap();
   else if (verb == "hold") {
     // "hold 2500": a finger held that long (Settings → Connection needs 2 s); plain "hold" is a short one.
@@ -548,6 +562,7 @@ void hub_create()
     lv_obj_align(sub, LV_ALIGN_LEFT_MID, text_x, 20);
     if (!mid) lv_obj_add_flag(sub, LV_OBJ_FLAG_HIDDEN);
   }
+  grid_create(page);
   link_label = make_label(page, &deck_14, C_MUTED, 160, 120);
   folder_label = make_label(page, &deck_bold_16, 0x7AA2F7, -158, 140);
   lv_obj_set_style_text_letter_space(folder_label, 2, 0);

@@ -20,9 +20,9 @@ static uint32_t forget_hold_from = 0;  // when the hold on Connection began; 0: 
 #define LONG_PRESS_MS 400  // LVGL's long press fires after this: the hold began that long before hold()
 
 enum Row { ROW_LINK, ROW_WIFI, ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS, ROW_SAVER,
-           ROW_WIFI_ADD, ROW_ABOUT, ROW_VACATION, ROW_LANG };
-static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_SAVER, ROW_HAPTICS, ROW_SOUND, ROW_BRIGHTNESS,
-                                              ROW_LANG, ROW_VACATION, ROW_ABOUT};
+           ROW_WIFI_ADD, ROW_ABOUT, ROW_VACATION, ROW_LANG, ROW_HUB };
+static const std::vector<int> SYSTEM_ROWS = {ROW_LINK, ROW_WIFI, ROW_WIFI_ADD, ROW_HUB, ROW_SAVER, ROW_HAPTICS, ROW_SOUND,
+                                              ROW_BRIGHTNESS, ROW_LANG, ROW_VACATION, ROW_ABOUT};
 static uint32_t wifi_asked_at = 0;  // "Add the Mac's Wi-Fi" was tapped: the password is asked on the Mac
 static const uint8_t SAVER_STEPS[] = {0, 5, 10, 15, 20, 25, 30, 60};  // user, 2026-11-14
 static const std::vector<int> DECK_ROWS = {ROW_HIDE_INACTIVE, ROW_HIDE_COMPLETED};
@@ -39,6 +39,7 @@ void settings_load()
   settings.brightness = prefs.getUChar("bright", settings.brightness);
   settings.saver = prefs.getUChar("saver", settings.saver);
   settings.lang = prefs.getUChar("lang", settings.lang);
+  settings.hub_grid = prefs.getBool("hubGrid", settings.hub_grid);
   prefs.end();
 }
 
@@ -78,6 +79,7 @@ static void save()
   prefs.putUChar("bright", settings.brightness);
   prefs.putUChar("saver", settings.saver);
   prefs.putUChar("lang", settings.lang);
+  prefs.putBool("hubGrid", settings.hub_grid);
   prefs.end();
 }
 
@@ -98,7 +100,7 @@ static String row_name(int row)
 {
   const char *NAMES[] = {L("Connection", "Зв’язок"), "Wi-Fi", L("Hide inactive", "Ховати неактивні"), L("Hide completed", "Ховати завершені"), L("Haptics", "Вібро"), L("Sound", "Звук"),
                                 L("Brightness", "Яскравість"), L("Screensaver", "Заставка"), L("Add the Mac's Wi-Fi", "Додати Wi-Fi Мака"), L("About", "Про пристрій"), L("Clawd vacation", "Відпустка Clawd"),
-                        "Мова / Language"};
+                        "Мова / Language", L("Hub layout", "Вигляд хабу")};
   return NAMES[row];
 }
 
@@ -122,6 +124,7 @@ static String row_value(int row)
       return String(wifi_store_count()) + L(" saved · tap to add", " збережено · тап: додати");
     case ROW_BRIGHTNESS: return String(settings.brightness) + "%";
     case ROW_LANG: return settings.lang ? "English" : "Українська";
+    case ROW_HUB: return settings.hub_grid ? L("grid", "сітка") : L("list", "список");
     case ROW_VACATION: return pet_vacation() ? L("time stands still", "час стоїть") : L("off", "вимкнена");  // the pet's clock frozen (pet.cpp)
     case ROW_ABOUT: return String("Clawd · ") + String(__DATE__).substring(0, 6);  // the device is Clawd (user, 2026-11-15)
     case ROW_SAVER: return settings.saver == 0 ? L("off", "вимк") : settings.saver >= 60 ? L("after 1 min", "через 1 хв") : L("after ", "через ") + String(settings.saver) + L(" s", " с");
@@ -223,6 +226,12 @@ void settings_page_tap()
     case ROW_WIFI: settings.wifi = !settings.wifi; break;
     case ROW_HIDE_INACTIVE: settings.hide_inactive = !settings.hide_inactive; break;
     case ROW_VACATION: pet_action(PET_VACATION); haptic_click(); settings_page_refresh(); return;
+    case ROW_HUB:  // two values: one tap flips them, like a switch (user, 2026-11-16: the Apple Watch-like grid)
+      settings.hub_grid = !settings.hub_grid;
+      save();
+      haptic_click();
+      settings_page_refresh();
+      return;
     case ROW_LANG: {  // saved, then a restart: every page is built again in the new language (titles set once included)
       settings.lang = !settings.lang;
       save();

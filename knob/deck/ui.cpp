@@ -907,7 +907,8 @@ static void run_test(const String &line)
   else if (verb == "slow") Serial.println("slowest UI pass: " + ui_slowest_note() + " · " + boot_note);
   else if (verb == "wifitry") wifi_app_test_try(arg);
   else if (verb == "ptarget") prompts_test_target(arg);
-  else if (verb == "feed") Serial.println(feed_report());  // tests: the open feed app (app_feed.cpp)
+  else if (verb == "feed") Serial.println(feed_report());
+  else if (verb == "hubgrid") settings.hub_grid = arg != "off", hub_home();  // tests: the grid without saving it  // tests: the open feed app (app_feed.cpp)
   else if (verb == "snakelevel") snake_test_level(arg.toInt());  // tests: a level's walls without playing it  // tests: pin the palette to a scratch session
   else if (verb == "subtitle") Serial.println("subtitle: " + deck_subtitle() + " | limits: " + claude_limits(true));
   else if (verb == "alert" && !worktrees.empty()) {  // "alert": the banner for the agent on screen, as a needs-you

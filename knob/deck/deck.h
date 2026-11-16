@@ -240,6 +240,7 @@ struct Settings {
   uint8_t brightness = 100;   // 40–100 %
   uint8_t saver = 15;         // screensaver after this many seconds idle; 0 off
   uint8_t lang = 0;           // 0 Ukrainian · 1 English (user, 2026-11-16: «вибір мови»)
+  bool hub_grid = false;      // the hub as a round-icon grid (Apple Watch-like) instead of the list
 };
 // The UI's words in the chosen language: L("English", "Українська").
 inline const char *L(const char *en, const char *ua) { extern Settings settings; return settings.lang ? en : ua; }
@@ -301,6 +302,14 @@ void hub_test(const String &verb, const String &arg);  // "T tap|hold|swipe|open
 void hub_tick();
 void hub_open(const App *app);
 const char *hub_shown_name(const App *app);  // the app's name on screen (Ukrainian)
+
+// hub_grid.cpp — the hub as a honeycomb of round icons (Settings → Hub layout)
+void grid_create(lv_obj_t *parent);
+void grid_show(bool on);
+void grid_set(const App *const *apps, int count, int focus);  // the list and the focused icon; the grid eases to it
+int grid_hit(int x, int y);  // the icon under a touch (screen px), -1 for none
+void grid_tick(uint32_t now);
+String grid_report();
 
 // globe.cpp — the hub's background
 void globe_create(lv_obj_t *parent);
