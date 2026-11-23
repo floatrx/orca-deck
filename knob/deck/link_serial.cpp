@@ -1,4 +1,4 @@
-// USB link: relay lines over the USB-Serial-JTAG port (`uv run knob/relay.py`). For debugging at the desk.
+// USB link: relay lines over the USB-Serial-JTAG port (`uv run knob/knob-bridge-relay.py`). For debugging at the desk.
 #include "deck.h"
 
 static SemaphoreHandle_t write_mux;

@@ -40,7 +40,7 @@ Transports, both at once:
   --stdio    stdin/stdout — KnobRelay.app carries these lines over BLE (knob/mac)
 Logs go to stderr: with --stdio, stdout is the wire.
 
-Run: uv run knob/relay.py [--stdio] [--no-serial]   (stop it before flashing: it holds the serial port)
+Run: uv run knob/knob-bridge-relay.py [--stdio] [--no-serial]   (stop it before flashing: it holds the serial port)
 """
 import argparse
 import base64

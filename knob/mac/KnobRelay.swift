@@ -1,12 +1,12 @@
 // KnobRelay.app — carries the knob's relay lines over BLE. macOS grants Bluetooth to an app bundle, not to a
 // python run by uv (Phase 1 spike, .work/plans/knob-ble.md), so this app owns CoreBluetooth and runs
-// `relay.py --stdio` as a child: BLE notifications → the child's stdin, the child's stdout → BLE writes.
-// The bridge logic and the S / K / D / A / C protocol stay in relay.py.
+// `knob-bridge-relay.py --stdio` as a child: BLE notifications → the child's stdin, the child's stdout → BLE writes.
+// The bridge logic and the S / K / D / A / C protocol stay in knob-bridge-relay.py.
 //
 // Security: the app talks only to the knob it pinned on the first pairing (~/.config/orca-deck/knob.json,
 // a CoreBluetooth peripheral identifier). `--pair` forgets the pin and takes the next orca-deck-knob it sees.
 //
-// Usage: KnobRelay <path/to/relay.py> [--pair]
+// Usage: KnobRelay <path/to/knob-bridge-relay.py> [--pair]
 import CoreBluetooth
 import Foundation
 
@@ -36,7 +36,7 @@ func savePin(_ id: UUID) {
     }
 }
 
-/// relay.py as a child process, restarted when it exits.
+/// knob-bridge-relay.py as a child process, restarted when it exits.
 final class Relay {
     let script: String
     var process: Process?
@@ -60,16 +60,16 @@ final class Relay {
             DispatchQueue.main.async { self?.take(chunk) }
         }
         child.terminationHandler = { [weak self] proc in
-            log("relay.py exited (\(proc.terminationStatus)), restarting in 2 s")
+            log("knob-bridge-relay.py exited (\(proc.terminationStatus)), restarting in 2 s")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self?.start() }
         }
         do {
             try child.run()
             process = child
             stdin = input.fileHandleForWriting
-            log("relay.py started (pid \(child.processIdentifier))")
+            log("knob-bridge-relay.py started (pid \(child.processIdentifier))")
         } catch {
-            log("cannot start relay.py: \(error)")
+            log("cannot start knob-bridge-relay.py: \(error)")
         }
     }
 
@@ -219,7 +219,7 @@ final class Link: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let script = args.first(where: { !$0.hasPrefix("--") }) else {
-    FileHandle.standardError.write("usage: KnobRelay <relay.py> [--pair]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: KnobRelay <knob-bridge-relay.py> [--pair]\n".data(using: .utf8)!)
     exit(2)
 }
 let relay = Relay(script: script)

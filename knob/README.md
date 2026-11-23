@@ -8,7 +8,7 @@ fallbacks.
 |---|---|
 | `deck/` | the firmware (below) |
 | `deck/build.sh` | build, and `build.sh upload [port]` to flash (takes the relay agent down and back up) |
-| `relay.py` | the relay: bridge ⇄ knob lines, over USB (pyserial) and over stdin/stdout for the app |
+| `knob-bridge-relay.py` | the relay: bridge ⇄ knob lines, over USB (pyserial) and over stdin/stdout for the app |
 | `mac/` | `KnobRelay.app` (Swift, CoreBluetooth) + `install.sh` → LaunchAgent `com.floatrx.knob-relay` |
 | `hello/` | the first test firmware (ring + crown + haptics) |
 | `ble-spike/` | Phase 1 spike: python cannot own Bluetooth on macOS, an app bundle can |
@@ -131,7 +131,7 @@ click). An app is an `App` in `deck.h` plus one line in `hub.cpp`. Plan: `.work/
 ## Links
 
 Priority **BLE → USB → Wi-Fi**. Wi-Fi turns on only after 10 s without BLE and USB, and off when one returns
-(one radio for both). Lines on BLE / USB (`relay.py` docstring, `protocol.md` § Knob transports):
+(one radio for both). Lines on BLE / USB (`knob-bridge-relay.py` docstring, `protocol.md` § Knob transports):
 down `S` state · `K` keepalive · `D` agent detail · `A` ack · `M` the Mac and Claude's limits · `X` a transcript ·
 `Y` the day; up `C` command · `V` dictation audio.
 
@@ -152,7 +152,7 @@ unless Settings → Connection → forget opened pairing (2 min). The app talks 
    "Connection Request from: orca-deck-knob" → Connect. Then `knob/mac/install.sh` (no `--pair`) keeps the pin.
    Every rebuild of the app changes its ad-hoc signature, so macOS asks for Bluetooth again.
 
-Log: `~/Library/Logs/knob-relay.log` (the app and relay.py; with `install.sh --usb` also the knob's USB log).
+Log: `~/Library/Logs/knob-relay.log` (the app and knob-bridge-relay.py; with `install.sh --usb` also the knob's USB log).
 
 ## Testing on the device
 

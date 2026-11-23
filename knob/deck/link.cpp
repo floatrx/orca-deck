@@ -1,5 +1,5 @@
 // The link layer: shared data, the command queue, the relay line protocol, and which link carries commands.
-// Priority: BLE → USB → Wi-Fi. BLE and USB carry relay lines (knob/relay.py): S state, K keepalive,
+// Priority: BLE → USB → Wi-Fi. BLE and USB carry relay lines (knob/knob-bridge-relay.py): S state, K keepalive,
 // D agent detail, A ack down; C command up. Wi-Fi talks HTTP to the bridge itself (link_wifi.cpp).
 #include "deck.h"
 #include <Preferences.h>

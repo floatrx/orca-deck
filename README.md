@@ -157,7 +157,7 @@ watch/install.sh                   # or: watch/install.sh http://<host>:7353
 ```
 
 A free Personal Team signs for **7 days**, and a rebuild does not renew it — Xcode reuses the cached profile until
-it expires. `watch/renew.sh` handles that: when the watch's signature has under two days left, it retires the cached
+it expires. `watch/renew-apex-watch-signing.sh` handles that: when the watch's signature has under two days left, it retires the cached
 profile (Xcode then makes a fresh 7-day one), builds and installs without bringing Apex to the front, and retries
 every 30 minutes until the watch is awake. A Telegram message says "renewed", or asks you to raise your wrist when
 under a day is left. Install the schedule once:

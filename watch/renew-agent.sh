@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Installs (or removes) the LaunchAgent that runs watch/renew.sh every 30 minutes, so Apex never runs out of
+# Installs (or removes) the LaunchAgent that runs watch/renew-apex-watch-signing.sh every 30 minutes, so Apex never runs out of
 # its 7-day signature.
 #
 #   watch/renew-agent.sh install     # write ~/Library/LaunchAgents/com.floatrx.apex-renew.plist and load it
@@ -10,7 +10,7 @@
 set -euo pipefail
 LABEL=com.floatrx.apex-renew
 PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
-SCRIPT=$(cd "$(dirname "$0")" && pwd)/renew.sh
+SCRIPT=$(cd "$(dirname "$0")" && pwd)/renew-apex-watch-signing.sh
 DOMAIN=gui/$(id -u)
 
 case ${1:-status} in

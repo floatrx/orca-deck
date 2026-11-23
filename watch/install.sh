@@ -8,10 +8,10 @@
 #   APEX_WATCH_UDID=<udid> watch/install.sh
 #   APEX_CONFIGURATION=Debug watch/install.sh   # default Release: -O makes SwiftUI's per-frame work several
 #                                               # times cheaper on the watch (Debug is -Onone)
-#   APEX_NO_LAUNCH=1 watch/install.sh           # install only: do not bring Apex to the front (watch/renew.sh)
+#   APEX_NO_LAUNCH=1 watch/install.sh           # install only: do not bring Apex to the front (watch/renew-apex-watch-signing.sh)
 #
 # On success it records the installed signature's expiry in ~/.config/orca-deck/apex-signed-until (ISO 8601);
-# watch/renew.sh reads it to decide when to reinstall.
+# watch/renew-apex-watch-signing.sh reads it to decide when to reinstall.
 #
 # The watch must be awake: raise the wrist and keep it unlocked until the hello line appears.
 set -euo pipefail

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds KnobRelay.app into ~/Applications and runs it as the LaunchAgent com.floatrx.knob-relay
-# (at login, restarted on exit). The agent's relay.py also serves the knob on USB: stop the agent before
+# (at login, restarted on exit). The agent's knob-bridge-relay.py also serves the knob on USB: stop the agent before
 # flashing — `launchctl bootout gui/$(id -u)/com.floatrx.knob-relay` — and run this script again after.
 # Usage: knob/mac/install.sh [--pair] [--usb]
 #   --pair  forget the pinned knob and take the next one it sees
@@ -28,7 +28,7 @@ cat > "$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>$APP/Contents/MacOS/KnobRelay</string>
-    <string>$HERE/../relay.py</string>$( [[ " $* " == *" --pair "* ]] && echo "
+    <string>$HERE/../knob-bridge-relay.py</string>$( [[ " $* " == *" --pair "* ]] && echo "
     <string>--pair</string>" )
   </array>
   <key>EnvironmentVariables</key><dict><key>HOME</key><string>$HOME</string>$( [[ " $* " == *" --usb "* ]] || echo "

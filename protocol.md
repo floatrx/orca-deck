@@ -262,12 +262,12 @@ Client loop:
 
 ## Knob transports (knob/)
 
-The knob is a bridge client through `knob/relay.py`; the bridge itself is unchanged.
+The knob is a bridge client through `knob/knob-bridge-relay.py`; the bridge itself is unchanged.
 
 | Link | Carrier | Relay side |
 |---|---|---|
-| BLE (main) | Nordic UART service `6E400001-…`, encrypted + bonded; RX write (Mac → knob), TX notify (knob → Mac) | `KnobRelay.app` (CoreBluetooth) runs `relay.py --stdio` and carries lines both ways |
-| USB (debug) | USB-Serial-JTAG, 115200 | `relay.py` opens the port itself (Espressif VID 0x303A) |
+| BLE (main) | Nordic UART service `6E400001-…`, encrypted + bonded; RX write (Mac → knob), TX notify (knob → Mac) | `KnobRelay.app` (CoreBluetooth) runs `knob-bridge-relay.py --stdio` and carries lines both ways |
+| USB (debug) | USB-Serial-JTAG, 115200 | `knob-bridge-relay.py` opens the port itself (Espressif VID 0x303A) |
 | Wi-Fi (fallback) | HTTP straight to `:7353` with the bearer token | — |
 
 Relay lines, one JSON object each, `\n`-terminated:

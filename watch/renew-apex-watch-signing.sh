@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Keeps Apex signed on the watch. A free Personal Team signs for 7 days, and rebuilding does not renew it:
 # Xcode reuses the cached profile until it expires. Run every 30 minutes by the LaunchAgent
-# com.floatrx.apex-renew (watch/renew.plist.template); by hand: watch/renew.sh [--force]
+# com.floatrx.apex-renew (watch/renew.plist.template); by hand: watch/renew-apex-watch-signing.sh [--force]
 #
 # 1. The watch's signature (~/.config/orca-deck/apex-signed-until, written by install.sh) is good for more than
 #    RENEW_DAYS → nothing to do.
